@@ -2,32 +2,39 @@
 File: app.py
 Purpose:
     This Streamlit application serves as the main interface for uploading a PDF Bill of Lading
-    and processing it via Mindee’s asynchronous BillOfLadingV1 API. It extracts the following
-    fields and displays them in a table:
-        - Bill of Lading No.
-        - Shipper (Address, Email, Name, Phone)
-        - Consignee (Address, Email, Name, Phone)
-        - Port of Loading
-        - Port of Discharge
-        - Date of Issue
-        - Departure Date
-Role & Integration:
-    - Uses Mindee's OCR API to parse the Bill of Lading.
-    - Implements a Streamlit-based user interface for file uploads.
-Workflow:
-    1. The user uploads a PDF file.
-    2. The app reads and sends it to Mindee’s BillOfLadingV1 product asynchronously.
-    3. On success, the requested fields (except Vessel/Voyage No. and Port of Discharge Agent) 
-       are displayed in a custom HTML table with subfields for Shipper and Consignee.
+    and processing it via Mindee’s asynchronous BillOfLadingV1 API. It extracts relevant fields.
+
 Modifications:
-    - Removed Vessel/Voyage No. and Port of Discharge Agent.
-    - Removed debug output of prediction keys.
-    - Replaced the original title with an Arabic title ("شركة خط الحرير") in red at the top center.
-    - Changed the file uploader label to "Pdf File" and restricted to PDFs.
+    - Removed the GitHub icon and Fork button from the top-right UI.
+    - Removed the three-dot menu.
+    - Removed the Streamlit branding button at the bottom-right.
+    - Ensured the UI is clean and distraction-free.
 """
 
 import streamlit as st
 from mindee import Client, product, AsyncPredictResponse
+
+# Hide Streamlit's default UI elements
+hide_streamlit_style = """
+<style>
+/* Hide GitHub icon, Fork button, and three-dot menu */
+.viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_, 
+.viewerBadge_link__1S137, .viewerBadge_text__1JaDK {
+    display: none !important;
+}
+
+/* Hide Streamlit branding */
+.stDeployButton {display: none !important;}
+
+/* Hide top-right settings menu */
+header {visibility: hidden;}
+
+/* Hide the footer */
+footer {visibility: hidden;}
+</style>
+"""
+
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 def main():
     # Arabic title at the top center with red color
