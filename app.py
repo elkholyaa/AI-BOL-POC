@@ -1,56 +1,43 @@
 """
+File: app.py
 Purpose:
-    This Streamlit app is the main interface for the AI-BOL-POC application.
-    It allows users to upload a Bill of Lading document (PDF, JPG, or PNG) and processes
-    it using Mindee's asynchronous API via the Python SDK. The app displays only the requested
-    fields in a polished HTML table with field names in red and values in blue.
-
-Requested Fields:
-    - BILL OF LADING No.
-    - SHIPPER (with relevant subfields)
-    - CONSIGNEE (with relevant subfields)
-    - VESSEL AND VOYAGE NO.
-    - PORT OF LOADING
-    - PORT OF DISCHARGE
-    - PORT OF DISCHARGE AGENT
-
-Excluded Fields:
-    - Confidence
-    - Bounding_box
-    - Polygon
-    - Description of Packages and Goods
-    - Container details
-    - Gross Cargo Weight
-
-Installation and Setup:
-    - Ensure Python 3.x is installed.
-    - Install required packages:
-          pip install streamlit requests pandas mindee
-    - Set your Mindee API key in `.streamlit/secrets.toml`:
-          mindee_api_key = "your_actual_api_key"
-    - No hardcoded file paths; users upload via the webpage.
-
-Usage Instructions:
-    1. Save this file as `app.py` in your project folder (e.g., F:\projects\AI-BOL-POC).
-    2. Open a terminal in that directory.
-    3. Run the app:
-          streamlit run app.py
-    4. Upload a Bill of Lading document to view the parsed results in the browser.
-
-Educational Notes:
-    - `enqueue_and_parse` submits the document and polls until the prediction is ready.
-    - Only the specified fields are extracted and displayed, with exclusions applied.
-    - Uploaded files are processed as bytes with the filename to determine file type.
+    This Streamlit application serves as the main interface for uploading a PDF Bill of Lading
+    and processing it via Mindee’s asynchronous BillOfLadingV1 API. It extracts the following
+    fields and displays them in a table:
+        - Bill of Lading No.
+        - Shipper (Address, Email, Name, Phone)
+        - Consignee (Address, Email, Name, Phone)
+        - Port of Loading
+        - Port of Discharge
+        - Date of Issue
+        - Departure Date
+Role & Integration:
+    - Uses Mindee's OCR API to parse the Bill of Lading.
+    - Implements a Streamlit-based user interface for file uploads.
+Workflow:
+    1. The user uploads a PDF file.
+    2. The app reads and sends it to Mindee’s BillOfLadingV1 product asynchronously.
+    3. On success, the requested fields (except Vessel/Voyage No. and Port of Discharge Agent) 
+       are displayed in a custom HTML table with subfields for Shipper and Consignee.
+Modifications:
+    - Removed Vessel/Voyage No. and Port of Discharge Agent.
+    - Removed debug output of prediction keys.
+    - Replaced the original title with an Arabic title ("شركة خط الحرير") in red at the top center.
+    - Changed the file uploader label to "Pdf File" and restricted to PDFs.
 """
 
 import streamlit as st
 from mindee import Client, product, AsyncPredictResponse
 
 def main():
-    st.title("Bill of Lading Parser - AI-BOL-POC")
+    # Arabic title at the top center with red color
+    st.markdown(
+        "<h1 style='text-align: center; font-family: \"Times New Roman\", serif; color: red;'>شركة خط الحرير</h1>",
+        unsafe_allow_html=True
+    )
 
-    # File uploader widget for supported file types
-    uploaded_file = st.file_uploader("Upload a Bill of Lading", type=["pdf", "jpg", "png"])
+    # File uploader for PDF only
+    uploaded_file = st.file_uploader("Pdf File", type=["pdf"])
 
     if uploaded_file:
         # Retrieve Mindee API key from secrets
@@ -64,46 +51,31 @@ def main():
                 # Initialize Mindee client
                 mindee_client = Client(api_key=api_key)
 
-                # Read uploaded file as bytes
+                # Read uploaded file bytes
                 file_bytes = uploaded_file.read()
                 if not file_bytes:
                     st.error("Uploaded file is empty or could not be read.")
                     return
 
+                # Create input_doc from bytes
                 input_doc = mindee_client.source_from_bytes(file_bytes, uploaded_file.name)
 
-                # Submit for asynchronous parsing with BillOfLadingV1
+                # Submit for asynchronous parsing
                 result: AsyncPredictResponse = mindee_client.enqueue_and_parse(
                     product.BillOfLadingV1,
                     input_doc,
                 )
 
-                # Process result if parsing succeeded
+                # Check if parsing succeeded
                 if result.job.status == "completed" and result.document is not None:
-                    # Access prediction object
                     prediction = result.document.inference.prediction
 
-                    # Debug: Display all attributes and raw dictionary
-                    st.write("Available prediction attributes (dir):", dir(prediction))
-                    st.write("Raw prediction dictionary (__dict__):", prediction.__dict__)
-
-                    # Extract only the requested fields with fallback to "N/A"
+                    # Extract main fields
                     bol_number = getattr(prediction, 'bill_of_lading_number', None)
                     bol_number = bol_number.value if bol_number else "N/A"
 
                     shipper = getattr(prediction, 'shipper', None)
                     consignee = getattr(prediction, 'consignee', None)
-
-                    # Extract VESSEL AND VOYAGE NO.
-                    # Check raw dict for possible vessel/voyage fields if not in dir()
-                    vessel_voyage = "N/A"  # Default
-                    if 'vessel' in prediction.__dict__ and 'voyage' in prediction.__dict__:
-                        vessel = prediction.__dict__['vessel']
-                        voyage = prediction.__dict__['voyage']
-                        vessel_voyage = f"{vessel.value} {voyage.value}" if vessel and voyage else "N/A"
-                    elif 'vessel_and_voyage_no' in prediction.__dict__:
-                        vessel_voyage_obj = prediction.__dict__['vessel_and_voyage_no']
-                        vessel_voyage = vessel_voyage_obj.value if vessel_voyage_obj else "N/A"
 
                     port_of_loading = getattr(prediction, 'port_of_loading', None)
                     port_of_loading = port_of_loading.value if port_of_loading else "N/A"
@@ -111,10 +83,13 @@ def main():
                     port_of_discharge = getattr(prediction, 'port_of_discharge', None)
                     port_of_discharge = port_of_discharge.value if port_of_discharge else "N/A"
 
-                    discharge_agent = getattr(prediction, 'port_of_discharge_agent', None)
-                    discharge_agent = discharge_agent.value if discharge_agent else "N/A"
+                    date_of_issue = getattr(prediction, 'date_of_issue', None)
+                    date_of_issue = date_of_issue.value if date_of_issue else "None"
 
-                    # Define polished HTML table with CSS styling
+                    departure_date = getattr(prediction, 'departure_date', None)
+                    departure_date = departure_date.value if departure_date else "None"
+
+                    # HTML table styling
                     html_table = """
                     <style>
                         table {
@@ -153,41 +128,42 @@ def main():
                     <table>
                     """
 
-                    # Helper function to add simple fields
                     def add_simple_field(field_name, value):
                         return f"<tr><td class='field-header'>{field_name}</td><td class='value'>{value}</td></tr>"
 
-                    # Helper function to add complex fields with exclusions
+                    # Helper function to enumerate subfields (like address, email, name, phone)
                     def add_complex_field(header, obj, exclude=None):
                         if exclude is None:
                             exclude = set()
                         if obj:
+                            # We'll treat each subfield as a row
                             html = f"<tr><td colspan='2' class='field-header'>{header}</td></tr>"
-                            for key, value in obj.__dict__.items():
+                            for key, val in obj.__dict__.items():
+                                # Skip fields we don't want to display
                                 if key.lower() not in exclude:
-                                    html += f"<tr><td class='subfield'>{key.capitalize()}</td><td class='value'>{value}</td></tr>"
+                                    html += f"<tr><td class='subfield'>{key.capitalize()}</td><td class='value'>{val}</td></tr>"
                             return html
                         return f"<tr><td class='field-header'>{header}</td><td class='value'>N/A</td></tr>"
 
                     # Fields to exclude
                     exclude_fields = {'confidence', 'bounding_box', 'polygon', 'description'}
 
-                    # Add only the requested fields to the table
+                    # Build table rows
                     html_table += add_simple_field("BILL OF LADING No.", bol_number)
                     html_table += add_complex_field("SHIPPER", shipper, exclude=exclude_fields)
                     html_table += add_complex_field("CONSIGNEE", consignee, exclude=exclude_fields)
-                    html_table += add_simple_field("VESSEL AND VOYAGE NO.", vessel_voyage)
                     html_table += add_simple_field("PORT OF LOADING", port_of_loading)
                     html_table += add_simple_field("PORT OF DISCHARGE", port_of_discharge)
-                    html_table += add_simple_field("PORT OF DISCHARGE AGENT", discharge_agent)
+                    html_table += add_simple_field("DATE OF ISSUE", date_of_issue)
+                    html_table += add_simple_field("DEPARTURE DATE", departure_date)
                     html_table += "</table>"
 
-                    # Render the polished table
+                    # Display the final table
                     st.subheader("Parsed Bill of Lading Information")
                     st.markdown(html_table, unsafe_allow_html=True)
 
                 else:
-                    # Handle API errors
+                    # Handle Mindee job errors
                     error_msg = result.job.error if result.job.error else "Unknown error"
                     st.error(f"Failed to parse document: {error_msg}")
                     st.json({"job_status": result.job.status, "error": error_msg})
