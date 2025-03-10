@@ -14,12 +14,17 @@ Modifications:
 import streamlit as st
 from mindee import Client, product, AsyncPredictResponse
 
-# Hide Streamlit's default UI elements
+# Hide Streamlit's UI elements (GitHub icon, Fork button, three-dot menu, branding)
 hide_streamlit_style = """
 <style>
 /* Hide GitHub icon, Fork button, and three-dot menu */
 .viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_, 
 .viewerBadge_link__1S137, .viewerBadge_text__1JaDK {
+    display: none !important;
+}
+
+/* Hide the three-dot menu */
+.css-1rs6os.edgvbvh3 {
     display: none !important;
 }
 
