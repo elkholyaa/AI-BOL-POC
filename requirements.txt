@@ -24,6 +24,7 @@ marisa-trie==1.2.1
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2
 mdurl==0.1.2
+mindee
 murmurhash==1.0.12
 numpy==2.2.3
 packaging==24.2
