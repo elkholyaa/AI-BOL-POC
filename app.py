@@ -27,14 +27,11 @@ def get_api_key_from_repo():
     try:
         response = requests.get(API_KEY_URL)
         if response.status_code == 200:
-            # Example file line: mindee = '4ea7da9df80a8e31a2e7a52fb37f4efb'
             lines = response.text.strip().splitlines()
             for line in lines:
                 line = line.strip()
                 if line.startswith("mindee ="):
-                    # Split on '=' and strip extra chars
                     key_part = line.split("=", 1)[1].strip()
-                    # Remove quotes if present
                     key_part = key_part.strip().strip("'").strip('"')
                     return key_part
             st.error("Could not find 'mindee =' line in the values file.")
@@ -48,16 +45,28 @@ def get_api_key_from_repo():
 
 def extract_text(obj):
     """
-    Extracts text exactly as it appears in the PDF.
-    If the object has a 'value' attribute, returns that.
-    Otherwise, joins all nonempty attribute values without adding extra labels.
+    Extracts text from a Mindee prediction field object.
+    - For simple fields with 'value' (e.g., bill_of_lading_number), returns the value.
+    - For complex fields (e.g., shipper, consignee), formats 'name' and 'address' as in the PDF.
+    - Uses <br> for line breaks in Streamlit HTML display.
     """
     if obj is None:
         return "N/A"
-    if hasattr(obj, "value") and isinstance(obj.value, str) and obj.value.strip():
-        return obj.value.strip()
-    values = [str(val).strip() for val in obj.__dict__.values() if val and str(val).strip()]
-    return "<br>".join(values) if values else "N/A"
+    if hasattr(obj, 'value'):
+        return str(obj.value).replace("\n", "<br>")
+    elif hasattr(obj, 'name') and hasattr(obj, 'address'):
+        name = getattr(obj, 'name', '')
+        address = getattr(obj, 'address', '')
+        if address:
+            # Split address by commas and strip whitespace
+            address_lines = [line.strip() for line in address.split(',')]
+            address_formatted = "<br>".join(address_lines)
+        else:
+            address_formatted = ""
+        # Combine name and address with a line break
+        return f"{name}<br>{address_formatted}" if address_formatted else name
+    else:
+        return str(obj).replace("\n", "<br>")
 
 def main():
     st.markdown(
@@ -65,7 +74,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Fetch the Mindee API key from the separate public GitHub repo
+    # Fetch the Mindee API key
     api_key = get_api_key_from_repo()
     if not api_key:
         st.error("Could not retrieve API key from the repository.")
@@ -86,17 +95,17 @@ def main():
 
                 if result.job.status == "completed" and result.document is not None:
                     prediction = result.document.inference.prediction
-                    bol_number_obj = getattr(prediction, 'bill_of_lading_number', None)
-                    bol_number = bol_number_obj.value if bol_number_obj else "N/A"
 
+                    # Extract data using the updated function
                     data = {
-                        "BILL OF LADING No.": bol_number,
+                        "BILL OF LADING No.": extract_text(getattr(prediction, 'bill_of_lading_number', None)),
                         "SHIPPER": extract_text(getattr(prediction, 'shipper', None)),
                         "CONSIGNEE": extract_text(getattr(prediction, 'consignee', None)),
-                        "PORT OF LOADING": getattr(prediction, 'port_of_loading', None).value if getattr(prediction, 'port_of_loading', None) else "N/A",
-                        "PORT OF DISCHARGE": getattr(prediction, 'port_of_discharge', None).value if getattr(prediction, 'port_of_discharge', None) else "N/A"
+                        "PORT OF LOADING": extract_text(getattr(prediction, 'port_of_loading', None)),
+                        "PORT OF DISCHARGE": extract_text(getattr(prediction, 'port_of_discharge', None))
                     }
 
+                    # Create HTML table for display
                     html_table = """
                     <style>
                         table {width: 100%; border-collapse: collapse; margin: 20px 0; background-color: #ffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden;}
@@ -119,10 +128,8 @@ def main():
                 else:
                     error_msg = result.job.error if result.job.error else "Unknown error"
                     st.error(f"Failed to parse document: {error_msg}")
-                    st.json({"job_status": result.job.status, "error": error_msg})
         except Exception as e:
             st.error(f"An error occurred during processing: {e}")
-            st.write("Exception details:", str(e))
 
 if __name__ == "__main__":
     main()
