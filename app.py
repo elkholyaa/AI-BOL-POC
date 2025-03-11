@@ -1,18 +1,7 @@
-"""
-File: app.py
-Purpose:
-    This Streamlit application serves as the main interface for uploading a PDF Bill of Lading
-    and processing it via Mindee’s asynchronous BillOfLadingV1 API. It extracts relevant fields.
-
-Modifications:
-    - Removed the GitHub icon and Fork button from the top-right UI.
-    - Removed the three-dot menu.
-    - Removed the Streamlit branding button at the bottom-right.
-    - Removed the profile icon at the bottom-left.
-    - Ensured the UI is clean and distraction-free.
-"""
-
 import streamlit as st
+import json
+import gspread
+from google.oauth2.service_account import Credentials
 from mindee import Client, product, AsyncPredictResponse
 
 # Hide Streamlit's UI elements (branding, profile, menu, GitHub)
@@ -44,8 +33,67 @@ header {visibility: hidden;}
 footer {visibility: hidden;}
 </style>
 """
-
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# Service account credentials from your provided JSON
+GOOGLE_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": "gen-lang-client-0562602106",
+    "private_key_id": "0a0dfaaa7fe83cd7abbb40a9a201eef6f64a35d3",
+    "private_key": """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDI8j6uYtjXmTV8
+eW7Z7lrTc5mwqp078o0GtPo/J81mZCzIhjLMg5OoPCtA0Jzw4BeTK5kl/s0bLLtP
+MGbnQ4md9rX4rFxNm3uf21cJ9UBk97SvsYRm8niQDQJHcfojiCDvV568xwrgvOTo
+dGVB0O53we+EGU9z9qRa0xW6k9WT80jbWOJHn/tBj4fv0PmfUk9mHciv/KHS5Xxb
+yS1wR0PUaKJHmcpOwArrVjF5+BSuUz/aK3YpG+1Lq1QXoxgpFFyFsk4zsimKJhBa
+ZC0kcfqLCVQVbNjwSJJ3X99bOkU6xQA4gWnCcyhRsAiIqIDIQRN1zjD/4DIJU9gr
+OVmF1lynAgMBAAECggEATm46p9796tyqQyy0ZwxA2BJhNNLK7wiDIdCGchsLcQD9
+d8DlV+ytN7dQXIpwDxYwLWmRa4KRtJ8XdteZ+n7iWkzehrJjjoj2zhSS2timKyKB
+nCep2XKfOv5Q2ujyLGcoD7L/yofXx5MCt3YixXcSdJy16zXjzIvCZ47HBt1HuehD
+RP2nHO0BFlUNkvd8+7nRkyaqxOtBL0ePtINUiHWwT+nE/PRzx9T0Ys3hqsJIKbnS
+2puBE7TK1BVqO/niMewkTRMJBONjDRozNnYSnTtxNPiPFBnozTpB27+tm2uhjAbx
+EfpwTUe/zxvr38xGn9rLAtL2m5UTMyTntQq5nvvPoQKBgQD/ZHp+RGyryNzzze7a
+/6jyAg06HY8i9CAkFQWU2eW34qI+tqjA2QX6yb1phN1OXVbsYTQ7H9nLpirFu8sh
+k4JHKkKTipVqvUAbci1Igk/OzwNdBZt9n1Dwh8Sanzi2DH76IdDnV5NdBWZ3QPUp
+xcVrlDcHPSJxRuHdiPE/sb2axwKBgQDJbJx8ou1asnUZsGlrILeHNGTin5kYLsCh
+luICi1wo3TPh8fRv9EAywFnryOPC6yY0LFNnDy8zb93lzMSSK7j2Wu174Y71FsZg
+069k0qv6D4CjSHkpfClL5aIXJFPGhLud8i9nO8ft22oopON/zRIymytaO+vjGEht
+YFbqh05PIQKBgHcaAbIO8Orv4nLkj8abwcsSv95hWJZBaRfKoe6361RlIarDflFp
+JEu/d1DVQGvCRb442qXUBbreREYwfNusse3EPIYX8/RyS4pBJfMRqmxUyEnCSrA7
+8wApILvHEyh7DWBTEtxAUB3qXc2xgmO3soin9z2t+fj/yGeK7I76seSTAoGBAJ6s
+M74vbwFSsdKx2OmuVUVqLcsk5KpbMh5ZSOOuOsRqNRPZ0bBb3jLcujl3AI0tRuQ0
+wuLd4FYJ2ujLXVK0pLlVOd2r+zzxWwct2u5200li6vg2AFSA3dtPI1hNor0xFMdA
+4LzXKBElFsS72Ad2Wc6J1CX6LEGygGPBT9bjDfphAoGAadeyUF5F9tMf5e1QK5DU
+jm3mRiHzkU/ugxP/z7uCOk56s885PyG/Ti2ulqdWp/OXKpyuop380aB7Mhztd7cM
+t0pGPiBNzEoIXh8FxM3QyMDHFIHMyFHViaOpTs2MhiUfR4mJC3Qi7yZZQGk8dDey
+Prr6vC9C61D2XAhAitG0/nU=
+-----END PRIVATE KEY-----
+""",
+    "client_email": "my-sheets-service-account@gen-lang-client-0562602106.iam.gserviceaccount.com",
+    "client_id": "111456377330651431387",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sheets-service-account%40gen-lang-client-0562602106.iam.gserviceaccount.com",
+    "universe_domain": "googleapis.com"
+}
+
+# Function to fetch API key from Google Sheet
+def get_api_key_from_sheet(creds):
+    try:
+        # Authenticate with Google Sheets
+        client = gspread.authorize(creds)
+        
+        # Open the Google Sheet (replace with your actual sheet URL or ID)
+        sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/12YB3_xHh0ngsh1gwQADC1vpqQFgjuX4x-VvLoD8_7R0/edit?pli=1&gid=0#gid=0")  # Replace with your sheet URL
+        worksheet = sheet.get_worksheet(0)  # Use the first worksheet
+        
+        # Assuming the API key is in cell A1 (adjust as needed)
+        api_key = worksheet.acell('A1').value
+        return api_key
+    except Exception as e:
+        st.error(f"Error fetching API key from Google Sheet: {e}")
+        return None
 
 def main():
     # Arabic title at the top center with red color
@@ -54,19 +102,25 @@ def main():
         unsafe_allow_html=True
     )
 
+    # Define scopes required for Google Sheets access
+    scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+    # Create credentials object
+    creds = Credentials.from_service_account_info(GOOGLE_CREDENTIALS, scopes=scopes)
+
+    # Fetch API key from Google Sheet
+    api_key = get_api_key_from_sheet(creds=creds)
+    if not api_key:
+        st.error("Could not retrieve API key from Google Sheet.")
+        return
+
     # File uploader for PDF only
-    uploaded_file = st.file_uploader("Pdf File", type=["pdf"])
+    uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
 
     if uploaded_file:
-        # Retrieve Mindee API key from secrets
-        api_key = st.secrets.get("mindee_api_key", None)
-        if not api_key:
-            st.error("Mindee API key not found. Please set it in `.streamlit/secrets.toml` as `mindee_api_key`.")
-            return
-
         try:
             with st.spinner("Processing document..."):
-                # Initialize Mindee client
+                # Initialize Mindee client with the fetched API key
                 mindee_client = Client(api_key=api_key)
 
                 # Read uploaded file bytes
@@ -149,15 +203,12 @@ def main():
                     def add_simple_field(field_name, value):
                         return f"<tr><td class='field-header'>{field_name}</td><td class='value'>{value}</td></tr>"
 
-                    # Helper function to enumerate subfields (like address, email, name, phone)
                     def add_complex_field(header, obj, exclude=None):
                         if exclude is None:
                             exclude = set()
                         if obj:
-                            # We'll treat each subfield as a row
                             html = f"<tr><td colspan='2' class='field-header'>{header}</td></tr>"
                             for key, val in obj.__dict__.items():
-                                # Skip fields we don't want to display
                                 if key.lower() not in exclude:
                                     html += f"<tr><td class='subfield'>{key.capitalize()}</td><td class='value'>{val}</td></tr>"
                             return html
