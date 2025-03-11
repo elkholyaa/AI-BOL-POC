@@ -8,13 +8,14 @@ Modifications:
     - Removed the GitHub icon and Fork button from the top-right UI.
     - Removed the three-dot menu.
     - Removed the Streamlit branding button at the bottom-right.
+    - Removed the profile icon at the bottom-left.
     - Ensured the UI is clean and distraction-free.
 """
 
 import streamlit as st
 from mindee import Client, product, AsyncPredictResponse
 
-# Hide Streamlit's UI elements (GitHub icon, Fork button, three-dot menu, branding)
+# Hide Streamlit's UI elements (branding, profile, menu, GitHub)
 hide_streamlit_style = """
 <style>
 /* Hide GitHub icon, Fork button, and three-dot menu */
@@ -30,6 +31,11 @@ hide_streamlit_style = """
 
 /* Hide Streamlit branding */
 .stDeployButton {display: none !important;}
+
+/* Hide user profile icon */
+.css-16idsys {
+    display: none !important;
+}
 
 /* Hide top-right settings menu */
 header {visibility: hidden;}
