@@ -1,10 +1,5 @@
 import streamlit as st
-import gspread
-import json
-import os
-import tempfile
-from google.oauth2.service_account import Credentials
-from google.auth.transport.requests import Request
+import requests
 from mindee import Client, product, AsyncPredictResponse
 
 # Hide Streamlit UI elements
@@ -23,58 +18,45 @@ footer { visibility: hidden; }
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# Load credentials from local file if available
-if os.path.exists("service_account_credentials.json"):
-    with open("service_account_credentials.json", "r") as f:
-        GOOGLE_CREDENTIALS = json.load(f)
-else:
-    if "secrets" in st.__dict__ and "google_sheets" in st.secrets:
-        GOOGLE_CREDENTIALS = json.loads(st.secrets["google_sheets"]["credentials"])
-    else:
-        st.error("No credentials found. Please upload service_account_credentials.json.")
-        st.stop()
-
-# Check for placeholder values.
-if GOOGLE_CREDENTIALS.get("project_id") == "your-project-id":
-    st.error("Detected placeholder credentials. Please update your service_account_credentials.json with real values.")
-    st.stop()
-
-# Ensure the private key is formatted correctly.
-if "private_key" in GOOGLE_CREDENTIALS:
-    key = GOOGLE_CREDENTIALS["private_key"]
-    if "\\n" in key:
-        key = key.replace("\\n", "\n")
-    GOOGLE_CREDENTIALS["private_key"] = key.strip()
-    if not GOOGLE_CREDENTIALS["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
-        st.error("Invalid private key format. It should start with '-----BEGIN PRIVATE KEY-----'")
-        st.stop()
-
-# Function to fetch API key from Google Sheet using open_by_url
-def get_api_key_from_sheet(creds):
+def get_api_key_from_repo():
+    """
+    Fetches the Mindee API key from a public GitHub repo file.
+    Expects a line like: mindee = 'YOUR_API_KEY'
+    """
+    API_KEY_URL = "https://raw.githubusercontent.com/elkholyaa/api-keys/main/values"
     try:
-        client = gspread.authorize(creds)
-        sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/12YB3_xHh0ngsh1gwQADC1vpqQFgjuX4x-VvLoD8_7R0/edit")
-        worksheet = sheet.get_worksheet(0)
-        return worksheet.acell('A1').value
+        response = requests.get(API_KEY_URL)
+        if response.status_code == 200:
+            # Example file line: mindee = '4ea7da9df80a8e31a2e7a52fb37f4efb'
+            lines = response.text.strip().splitlines()
+            for line in lines:
+                line = line.strip()
+                if line.startswith("mindee ="):
+                    # Split on '=' and strip extra chars
+                    key_part = line.split("=", 1)[1].strip()
+                    # Remove quotes if present
+                    key_part = key_part.strip().strip("'").strip('"')
+                    return key_part
+            st.error("Could not find 'mindee =' line in the values file.")
+            return None
+        else:
+            st.error(f"Error fetching API key from repository: HTTP {response.status_code}")
+            return None
     except Exception as e:
-        st.error(f"Error fetching API key from Google Sheet: {e}")
+        st.error(f"Exception while fetching API key from repository: {e}")
         return None
 
 def extract_text(obj):
     """
-    Extracts text from an object as provided by the PDF.
-    If the object has a 'value' attribute, return it.
-    Otherwise, join any available attribute values (excluding technical ones)
-    without adding extra labels.
+    Extracts text exactly as it appears in the PDF.
+    If the object has a 'value' attribute, returns that.
+    Otherwise, joins all nonempty attribute values without adding extra labels.
     """
     if obj is None:
         return "N/A"
-    if hasattr(obj, "value"):
-        return obj.value
-    # Fallback: join all attribute values (exclude known technical keys)
-    excluded = {'confidence', 'bounding_box', 'polygon', 'description'}
-    values = [str(val) for key, val in obj.__dict__.items() 
-              if key.lower() not in excluded and val]
+    if hasattr(obj, "value") and isinstance(obj.value, str) and obj.value.strip():
+        return obj.value.strip()
+    values = [str(val).strip() for val in obj.__dict__.values() if val and str(val).strip()]
     return "<br>".join(values) if values else "N/A"
 
 def main():
@@ -83,22 +65,10 @@ def main():
         unsafe_allow_html=True
     )
 
-    scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    try:
-        creds = Credentials.from_service_account_info(GOOGLE_CREDENTIALS, scopes=scopes)
-    except Exception as e:
-        st.error(f"Error creating credentials: {e}")
-        return
-
-    try:
-        creds.refresh(Request())
-    except Exception as e:
-        st.error(f"Failed to validate credentials: {e}")
-        return
-
-    api_key = get_api_key_from_sheet(creds)
+    # Fetch the Mindee API key from the separate public GitHub repo
+    api_key = get_api_key_from_repo()
     if not api_key:
-        st.error("Could not retrieve API key from Google Sheet.")
+        st.error("Could not retrieve API key from the repository.")
         return
 
     uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
@@ -116,10 +86,9 @@ def main():
 
                 if result.job.status == "completed" and result.document is not None:
                     prediction = result.document.inference.prediction
-                    bol_number = getattr(prediction, 'bill_of_lading_number', None)
-                    bol_number = bol_number.value if bol_number else "N/A"
-                    
-                    # Order fields: BILL OF LADING No., SHIPPER, CONSIGNEE, PORT OF LOADING, PORT OF DISCHARGE.
+                    bol_number_obj = getattr(prediction, 'bill_of_lading_number', None)
+                    bol_number = bol_number_obj.value if bol_number_obj else "N/A"
+
                     data = {
                         "BILL OF LADING No.": bol_number,
                         "SHIPPER": extract_text(getattr(prediction, 'shipper', None)),
