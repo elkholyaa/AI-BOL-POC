@@ -6,14 +6,16 @@
 #
 # Role:
 #   - Handles user interactions, including file upload for a text-based PDF.
-#   - Extracts text from the PDF using pdfplumber.
+#   - Extracts text from the PDF using pdfplumber. If no text is found (e.g., in
+#     image-based PDFs), falls back to OCR using pytesseract.
 #   - Sends the extracted text to GPT-4o-mini for structured Bill of Lading data extraction.
 #   - Displays parsed Bill of Lading data and API token usage details,
 #     with cost shown in cents.
 #
 # Workflow:
 #   1. User uploads a text-based PDF.
-#   2. The PDF is processed by pdfplumber to extract text.
+#   2. The PDF is processed by pdfplumber to extract text. If text extraction fails,
+#      OCR via pytesseract is used as a fallback.
 #   3. The extracted text is sent to GPT-4o-mini (via /v1/chat/completions) with a prompt.
 #   4. The response is parsed and displayed, including token usage and cost.
 #
@@ -22,8 +24,8 @@
 #   to process extracted text and return structured JSON outputs.
 #
 # Note:
-#   This version is intended for text-based PDFs only and is designed to run on Streamlit Cloud.
-#   The table style has been updated to remove width constraints and preserve multiline content.
+#   This version is intended for text-based PDFs but now includes an OCR fallback,
+#   making it more robust when encountering image-based PDFs.
 # =======================================================================
 
 import streamlit as st
@@ -32,6 +34,8 @@ import pandas as pd
 import openai
 import json
 import pdfplumber
+import pytesseract
+from PIL import Image
 from io import BytesIO
 
 # Hide unnecessary Streamlit UI elements
@@ -63,15 +67,28 @@ def extract_text_from_pdf(file_bytes):
     """
     Uses pdfplumber to extract text from a text-based PDF.
     Wraps the PDF bytes in a BytesIO object so that pdfplumber can seek properly.
+    If pdfplumber does not extract any text from a page, falls back to OCR using pytesseract.
     Returns the concatenated text from all pages.
     """
     text = ""
     try:
         with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+            if not pdf.pages:
+                st.error("No pages found in the PDF.")
+                return None
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
+                else:
+                    # Fallback: perform OCR on the page image
+                    st.info("No text detected on a page; falling back to OCR.")
+                    page_image = page.to_image(resolution=300)
+                    # Convert to PIL Image and perform OCR
+                    pil_image = page_image.original
+                    ocr_text = pytesseract.image_to_string(pil_image)
+                    if ocr_text:
+                        text += ocr_text + "\n"
     except Exception as e:
         st.error(f"Error extracting text from PDF: {e}")
         return None
@@ -119,7 +136,7 @@ def main():
 
     uploaded_file = st.file_uploader("Upload Text-Based PDF File", type=["pdf"])
     if uploaded_file:
-        with st.spinner("Processing text-based PDF..."):
+        with st.spinner("Processing PDF..."):
             file_bytes = uploaded_file.read()
             if not file_bytes:
                 st.error("Uploaded file is empty or could not be read.")
@@ -127,7 +144,7 @@ def main():
 
             pdf_text = extract_text_from_pdf(file_bytes)
             if not pdf_text:
-                st.warning("No text found in this PDF. It may be an image-based PDF. Please try a text-based PDF.")
+                st.warning("No text found in this PDF after OCR fallback. Please try another PDF.")
                 return
 
             response = call_gpt4o_mini_text_api(pdf_text, api_key)
@@ -153,7 +170,6 @@ def main():
             }
 
             st.subheader("Parsed Bill of Lading Information")
-            # Updated CSS: remove max-width and enable pre-wrap for multiline
             html_table = """
             <style>
                 table {
@@ -170,8 +186,8 @@ def main():
                     text-align: left;
                     border-bottom: 1px solid #ddd;
                     vertical-align: top;
-                    white-space: pre-wrap; /* preserve multiline */
-                    word-wrap: break-word; /* allow wrapping */
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
                 }
                 th {
                     color: #ff0000;
@@ -195,13 +211,13 @@ def main():
             html_table += "</tr></table>"
             st.markdown(html_table, unsafe_allow_html=True)
 
-            # Example cost calculation (GPT-4o mini)
+            # Calculate token usage and cost in cents based on GPT-4o mini pricing:
+            # Input: $0.150 per 1M tokens, Output: $0.600 per 1M tokens.
             usage = response.get("usage", {})
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
             total_tokens = usage.get("total_tokens", 0)
 
-            # Adjust these rates if your GPT-4o mini pricing differs
             cost_prompt_cents = prompt_tokens * (0.150 / 1e6 * 100)
             cost_completion_cents = completion_tokens * (0.600 / 1e6 * 100)
             cost_total_cents = cost_prompt_cents + cost_completion_cents
