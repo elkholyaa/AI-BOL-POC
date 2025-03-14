@@ -8,14 +8,13 @@
 #   - Handles user interactions, including file upload for a text-based PDF.
 #   - Extracts text from the PDF using pdfplumber.
 #   - Sends the extracted text to GPT-4o-mini for structured Bill of Lading data extraction.
-#   - Displays:
-#       • Parsed Bill of Lading data,
-#       • API token usage (prompt vs. completion), total tokens, and cost.
+#   - Displays parsed Bill of Lading data and API token usage details,
+#     with cost shown in cents.
 #
 # Workflow:
 #   1. User uploads a text-based PDF.
 #   2. The PDF is processed by pdfplumber to extract text.
-#   3. The extracted text is sent to GPT-4o-mini (via /v1/chat/completions) with a prompt for field extraction.
+#   3. The extracted text is sent to GPT-4o-mini (via /v1/chat/completions) with a prompt.
 #   4. The response is parsed and displayed, including token usage and cost.
 #
 # Integration:
@@ -23,7 +22,8 @@
 #   to process extracted text and return structured JSON outputs.
 #
 # Note:
-#   This version is intended for text-based PDFs only. It is designed to run on Streamlit Cloud.
+#   This version is intended for text-based PDFs only and is designed to run on Streamlit Cloud.
+#   The table style has been updated to remove width constraints and preserve multiline content.
 # =======================================================================
 
 import streamlit as st
@@ -134,6 +134,7 @@ def main():
             if response is None:
                 return
 
+            # Parse the JSON from the API response
             message_content = response["choices"][0]["message"]["content"]
             try:
                 prediction = json.loads(message_content)
@@ -152,14 +153,36 @@ def main():
             }
 
             st.subheader("Parsed Bill of Lading Information")
+            # Updated CSS: remove max-width and enable pre-wrap for multiline
             html_table = """
             <style>
-                table {width: 100%; border-collapse: collapse; margin: 20px 0; background-color: #ffffff; 
-                       box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden;}
-                th, td {padding: 15px; text-align: left; border-bottom: 1px solid #ddd; 
-                       vertical-align: top; word-wrap: break-word; max-width: 600px;}
-                th {color: #ff0000; font-weight: bold; font-size: 16px; background-color: #f5f5f5;}
-                td {color: #0000ff; font-size: 14px;}
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 20px 0;
+                    background-color: #ffffff;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
+                th, td {
+                    padding: 15px;
+                    text-align: left;
+                    border-bottom: 1px solid #ddd;
+                    vertical-align: top;
+                    white-space: pre-wrap; /* preserve multiline */
+                    word-wrap: break-word; /* allow wrapping */
+                }
+                th {
+                    color: #ff0000;
+                    font-weight: bold;
+                    font-size: 16px;
+                    background-color: #f5f5f5;
+                }
+                td {
+                    color: #0000ff;
+                    font-size: 14px;
+                }
             </style>
             <table>
             <tr>
@@ -172,22 +195,28 @@ def main():
             html_table += "</tr></table>"
             st.markdown(html_table, unsafe_allow_html=True)
 
+            # Example cost calculation (GPT-4o mini)
             usage = response.get("usage", {})
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
             total_tokens = usage.get("total_tokens", 0)
-            cost_prompt = prompt_tokens * 0.03 / 1000
-            cost_completion = completion_tokens * 0.06 / 1000
-            cost_total = cost_prompt + cost_completion
+
+            # Adjust these rates if your GPT-4o mini pricing differs
+            cost_prompt_cents = prompt_tokens * (0.150 / 1e6 * 100)
+            cost_completion_cents = completion_tokens * (0.600 / 1e6 * 100)
+            cost_total_cents = cost_prompt_cents + cost_completion_cents
 
             df_token_cost = pd.DataFrame({
                 "In Tokens (Prompt)": [prompt_tokens],
                 "Out Tokens (Completion)": [completion_tokens],
                 "Total Tokens": [total_tokens],
-                "Cost (USD)": [f"{cost_total:.4f}"]
+                "Cost (cents)": [f"{cost_total_cents:.2f}"]
             })
+            df_token_cost.index = ["" for _ in range(len(df_token_cost))]
+            styled_table = df_token_cost.style.set_properties(**{'text-align': 'left'}).to_html()
+
             st.subheader("API Token Usage and Cost")
-            st.table(df_token_cost)
+            st.markdown(styled_table, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
