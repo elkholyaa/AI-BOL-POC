@@ -1,3 +1,11 @@
+# Note: Tesseract OCR must be installed separately on your system.
+# For Windows, you can install it via Chocolatey:
+#    choco install tesseract
+# or download the installer from:
+#    https://github.com/UB-Mannheim/tesseract/wiki
+#
+# Ensure that Tesseract is added to your system PATH so that pytesseract can use it.
+
 annotated-types==0.7.0
 anyio==4.8.0
 blinker==1.9.0
