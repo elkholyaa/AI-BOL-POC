@@ -5,31 +5,15 @@
 #   Main Streamlit application file for the AI-BOL-POC-GPT4oMini project.
 #
 # Role:
-#   - Handles file upload for a text-based PDF (with OCR fallback for image-based pages).
-#   - Extracts text from the PDF using pdfplumber; if no text is found on a page, uses pytesseract OCR.
-#   - Sends the extracted text to GPT-4o-mini for structured Bill of Lading data extraction.
-#   - Displays parsed Bill of Lading data along with additional "Details" fields (Notify Parties, etc.).
-#   - Shows API token usage and cost (in cents) based on GPT-4o-mini pricing.
-#
-# Workflow:
-#   1. User uploads a PDF.
-#   2. pdfplumber extracts text from each page; OCR fallback if text is empty.
-#   3. The extracted text is sent to GPT-4o-mini with a prompt requesting:
-#      - Basic Fields (B/L No., Shipper, Consignee, Ports, etc.)
-#      - Additional Details (Notify Parties, Vessel & Voyage, Container Info, etc.)
-#   4. The JSON response is parsed into two tables:
-#        - "Parsed Bill of Lading Information" for the main fields.
-#        - "Details" for extended info, plus a separate container info table if present.
-#   5. Token usage and cost are calculated and displayed.
-#
-# Integration:
-#   Uses OpenAI’s ChatCompletion API with model "gpt-4o-mini" to process extracted text.
+#   - Handles file upload for a PDF.
+#   - Processes text-based pages with pdfplumber and calls GPT-4o-mini for final extraction (unchanged).
+#   - If a page has no text, calls GPT-4 for image extraction, accumulating usage and cost.
+#   - Combines text from all pages and displays the final structured data with your original styling.
+#   - Shows separate usage/cost lines for GPT-4o-mini (text-based) and GPT-4 (image-based).
 #
 # Note:
-#   This version is designed for Streamlit Cloud, requiring:
-#     - pdfplumber + pytesseract (with Tesseract installed in the environment).
-#     - White-space styling for multiline content.
-#     - Minimizing LLM variability (temperature=0) and increased max_tokens=2048.
+#   - This code reverts text-based logic and styling to exactly what you had in your attached version.
+#   - Tesseract OCR is disabled.
 # =======================================================================
 
 import streamlit as st
@@ -38,14 +22,15 @@ import pandas as pd
 import openai
 import json
 import pdfplumber
-import pytesseract
+# import pytesseract  # OCR is disabled
 from PIL import Image
 from io import BytesIO
+import base64
 
-# Hide unnecessary Streamlit UI elements
+# Hide unnecessary Streamlit UI elements (same as your attached version)
 hide_streamlit_style = """
 <style>
-.viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_, 
+.viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_,
 .viewerBadge_link__1S137, .viewerBadge_text__1JaDK, header, footer {
     display: none !important;
 }
@@ -55,8 +40,8 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 def get_api_key():
     """
-    Retrieves the GPT-4o Mini API key from Streamlit secrets.
-    The API key must be stored in .streamlit/secrets.toml under 'api-key-gpt-4o-mini'.
+    Retrieves the GPT-4o-mini API key from Streamlit secrets.
+    Must be stored in .streamlit/secrets.toml under 'api-key-gpt-4o-mini'.
     """
     try:
         api_key = st.secrets["api-key-gpt-4o-mini"]
@@ -70,38 +55,31 @@ def get_api_key():
 def extract_text_from_pdf(file_bytes):
     """
     Uses pdfplumber to extract text from each page of the PDF.
-    If a page has no extractable text, falls back to OCR with pytesseract.
-    Returns concatenated text from all pages.
+    If a page has no extractable text, we skip OCR (disabled).
+    Returns concatenated text from all pages or an empty string if none is found.
+    (Text-based code remains exactly as in your attached version.)
     """
     text = ""
     try:
         with pdfplumber.open(BytesIO(file_bytes)) as pdf:
             if not pdf.pages:
                 st.error("No pages found in the PDF.")
-                return None
+                return ""
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
                 else:
-                    st.info("No text detected on a page; using OCR fallback.")
-                    pil_image = page.to_image(resolution=300).original
-                    ocr_text = pytesseract.image_to_string(pil_image)
-                    if ocr_text:
-                        text += ocr_text + "\n"
+                    st.info("No text detected on a page; OCR fallback is disabled.")
     except Exception as e:
         st.error(f"Error extracting text from PDF: {e}")
-        return None
+        return ""
     return text.strip()
 
 def call_gpt4o_mini_text_api(pdf_text, api_key):
     """
-    Sends the extracted PDF text to GPT-4o-mini for structured data extraction.
-    Prompt requests:
-      - Basic Fields (B/L No., Shipper, Consignee, Port of Loading, Port of Discharge)
-      - Additional Details (Notify Parties, Port of Discharge Agent, Vessel & Voyage No, Booking Ref,
-        Number of Containers, and container_info array).
-    Emphasizes not to summarize or omit details, and sets temperature=0, max_tokens=2048.
+    Sends the combined PDF text to GPT-4o-mini for structured data extraction.
+    (Unchanged text-based logic from your attached version.)
     """
     prompt = (
         "You are given text from a Bill of Lading document. "
@@ -131,19 +109,110 @@ def call_gpt4o_mini_text_api(pdf_text, api_key):
     openai.api_key = api_key
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",  # Hypothetical GPT-4o-mini model
+            model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an assistant that processes Bill of Lading text and returns structured JSON."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "You are an assistant that processes Bill of Lading text and returns structured JSON."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
             ],
             response_format={"type": "json_object"},
-            temperature=0,      # Minimizes variability
-            max_tokens=2048     # Allows enough space for a full response
+            temperature=0,
+            max_tokens=3000
         )
         return response
     except openai.error.OpenAIError as oe:
-        st.error(f"OpenAI API error: {oe}")
+        st.error(f"OpenAI API error (text-based): {oe}")
         return None
+
+def call_gpt4_image_api(image, page_index, api_key):
+    """
+    Calls GPT-4 to extract text from a scanned page image.
+    Returns (extracted_text, usage_dict).
+    """
+    buffered = BytesIO()
+    image.save(buffered, format="JPEG")
+    img_bytes = buffered.getvalue()
+    img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+    data_uri = "data:image/jpeg;base64," + img_base64
+
+    payload = {
+        "model": "gpt-4o",  # GPT-4
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": data_uri
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            f"This is a scanned page of a Bill of Lading document (page {page_index}). "
+                            "Return the entire text exactly as it appears, including punctuation, line breaks, and spacing, "
+                            "without summarizing or omitting any details."
+                        )
+                    }
+                ]
+            }
+        ],
+        "temperature": 0,
+        "max_tokens": 3000
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    try:
+        resp = requests.post("https://api.openai.com/v1/chat/completions",
+                             headers=headers, data=json.dumps(payload))
+        if resp.status_code != 200:
+            st.error(f"OpenAI Image API error (page {page_index}): {resp.text}")
+            return "", {}
+        resp_json = resp.json()
+        text_result = resp_json["choices"][0]["message"]["content"].strip()
+        usage = resp_json.get("usage", {})
+        return text_result, usage
+    except Exception as e:
+        st.error(f"Error calling GPT-4 image API on page {page_index}: {e}")
+        return "", {}
+
+def extract_text_from_pdf_with_image_fallback(file_bytes, api_key):
+    """
+    For each page:
+      - If text is found by pdfplumber, use it.
+      - Else call GPT-4 for image extraction, accumulate usage tokens.
+    Returns (combined_text, usage dict for image-based calls).
+    """
+    full_text = ""
+    cumulative_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    try:
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+            if not pdf.pages:
+                st.error("No pages found in the PDF.")
+                return "", cumulative_usage
+            for i, page in enumerate(pdf.pages, start=1):
+                page_text = page.extract_text()
+                if page_text and page_text.strip():
+                    full_text += page_text + "\n"
+                else:
+                    st.info(f"No text detected on page {i}; using image-based extraction.")
+                    page_image = page.to_image(resolution=300).original
+                    extracted, usage = call_gpt4_image_api(page_image, i, api_key)
+                    full_text += extracted + "\n"
+                    for k in cumulative_usage:
+                        cumulative_usage[k] += usage.get(k, 0)
+        return full_text.strip(), cumulative_usage
+    except Exception as e:
+        st.error(f"Error processing PDF: {e}")
+        return "", cumulative_usage
 
 def format_field(value):
     """Replace newlines with <br> for HTML display."""
@@ -153,7 +222,6 @@ def format_field(value):
 
 def main():
     st.markdown("<h1 style='text-align: center; color: red;'>شركة خط الحرير</h1>", unsafe_allow_html=True)
-
     api_key = get_api_key()
     if not api_key:
         return
@@ -166,26 +234,28 @@ def main():
                 st.error("Uploaded file is empty or could not be read.")
                 return
 
-            pdf_text = extract_text_from_pdf(file_bytes)
-            if not pdf_text:
-                st.warning("No text found in this PDF even after OCR fallback. Please try another PDF.")
+            # 1) Combine text from pdfplumber or GPT-4 fallback
+            combined_text, image_usage = extract_text_from_pdf_with_image_fallback(file_bytes, api_key)
+            if not combined_text:
+                st.warning("No text could be extracted from the PDF.")
                 return
 
-            response = call_gpt4o_mini_text_api(pdf_text, api_key)
+            # 2) Call GPT-4o-mini for structured extraction (unchanged text-based approach)
+            response = call_gpt4o_mini_text_api(combined_text, api_key)
             if response is None:
                 return
 
-            # Parse JSON from the API response
-            message_content = response["choices"][0]["message"]["content"]
             try:
+                message_content = response["choices"][0]["message"]["content"]
                 prediction = json.loads(message_content)
-            except json.JSONDecodeError as je:
-                st.error(f"Failed to decode JSON from API response: {je}")
+            except (KeyError, json.JSONDecodeError) as e:
+                st.error(f"Failed to decode JSON from API response: {e}")
                 st.text("Raw response:")
-                st.text(message_content)
+                st.text(json.dumps(response, indent=2))
                 return
 
-            # Basic Fields
+            # 3) Build the colored tables exactly as in your “second image”
+            st.subheader("Parsed Bill of Lading Information")
             extracted_data = {
                 "BILL OF LADING No.": format_field(prediction.get("bill_of_lading_number")),
                 "SHIPPER": format_field(prediction.get("shipper")),
@@ -193,8 +263,6 @@ def main():
                 "PORT OF LOADING": format_field(prediction.get("port_of_loading")),
                 "PORT OF DISCHARGE": format_field(prediction.get("port_of_discharge"))
             }
-
-            st.subheader("Parsed Bill of Lading Information")
             html_table = """
             <style>
                 table {
@@ -236,7 +304,7 @@ def main():
             html_table += "</tr></table>"
             st.markdown(html_table, unsafe_allow_html=True)
 
-            # Additional Details
+            st.subheader("Details")
             details_data = {
                 "NOTIFY PARTIES": format_field(prediction.get("notify_parties")),
                 "PORT OF DISCHARGE AGENT": format_field(prediction.get("port_of_discharge_agent")),
@@ -244,8 +312,6 @@ def main():
                 "BOOKING REF.": format_field(prediction.get("booking_ref")),
                 "Number of Containers": format_field(prediction.get("number_of_containers"))
             }
-
-            st.subheader("Details")
             details_table = """
             <style>
                 table {
@@ -283,12 +349,10 @@ def main():
             details_table += "</table>"
             st.markdown(details_table, unsafe_allow_html=True)
 
-            # Container Information
             container_info = prediction.get("container_info")
             if container_info and isinstance(container_info, list) and len(container_info) > 0:
                 st.subheader("Container Information")
                 df_containers = pd.DataFrame(container_info)
-                # Rename columns for display if needed
                 df_containers = df_containers.rename(columns={
                     "container_number": "Container Number",
                     "seal_number": "Seal Number",
@@ -299,19 +363,20 @@ def main():
                 })
                 st.table(df_containers)
 
-            # Token Usage & Cost
-            usage = response.get("usage", {})
-            prompt_tokens = usage.get("prompt_tokens", 0)
-            completion_tokens = usage.get("completion_tokens", 0)
-            total_tokens = usage.get("total_tokens", 0)
+            # 4) Display cost for GPT-4o-mini (text-based) and GPT-4 (image fallback)
+            st.subheader("API Token Usage and Cost")
 
-            # GPT-4o mini pricing:
-            #   Input tokens: $0.150 per 1M => cost_prompt_cents
-            #   Output tokens: $0.600 per 1M => cost_completion_cents
-            cost_prompt_cents = prompt_tokens * (0.150 / 1e6 * 100)
-            cost_completion_cents = completion_tokens * (0.600 / 1e6 * 100)
+            # ---- GPT-4o-mini usage (final text-based extraction) ----
+            text_usage = response.get("usage", {})
+            prompt_tokens = text_usage.get("prompt_tokens", 0)
+            completion_tokens = text_usage.get("completion_tokens", 0)
+            total_tokens = text_usage.get("total_tokens", 0)
+            # cost logic as from your second image
+            cost_prompt_cents = (prompt_tokens / 1e6) * 0.15 * 100
+            cost_completion_cents = (completion_tokens / 1e6) * 0.60 * 100
             cost_total_cents = cost_prompt_cents + cost_completion_cents
 
+            # Build the table for GPT-4o-mini usage
             df_token_cost = pd.DataFrame({
                 "In Tokens (Prompt)": [prompt_tokens],
                 "Out Tokens (Completion)": [completion_tokens],
@@ -321,8 +386,33 @@ def main():
             df_token_cost.index = ["" for _ in range(len(df_token_cost))]
             styled_table = df_token_cost.style.set_properties(**{'text-align': 'left'}).to_html()
 
-            st.subheader("API Token Usage and Cost")
+            st.markdown("**Text-based Extraction (GPT-4o-mini)**")
             st.markdown(styled_table, unsafe_allow_html=True)
+
+            # ---- GPT-4 usage for image fallback ----
+            image_prompt_tokens = image_usage.get("prompt_tokens", 0)
+            image_completion_tokens = image_usage.get("completion_tokens", 0)
+            image_total_tokens = image_usage.get("total_tokens", 0)
+            # cost for GPT-4 image fallback: 0.03 $/1K prompt => 0.003 cents/token
+            #                                  0.06 $/1K completion => 0.006 cents/token
+            image_cost_cents = (image_prompt_tokens * 0.003) + (image_completion_tokens * 0.006)
+
+            # If we never used GPT-4 fallback, these tokens are zero => cost is zero
+            st.markdown("**Image-based Extraction (GPT-4)**")
+            df_image_cost = pd.DataFrame({
+                "In Tokens (Prompt)": [image_prompt_tokens],
+                "Out Tokens (Completion)": [image_completion_tokens],
+                "Total Tokens": [image_total_tokens],
+                "Cost (cents)": [f"{image_cost_cents:.2f}"]
+            })
+            df_image_cost.index = ["" for _ in range(len(df_image_cost))]
+            styled_image_table = df_image_cost.style.set_properties(**{'text-align': 'left'}).to_html()
+            st.markdown(styled_image_table, unsafe_allow_html=True)
+
+            # Sum total cost
+            combined_cost = cost_total_cents + image_cost_cents
+            st.markdown(f"**Total Combined Estimated Cost:** {combined_cost:.2f} cents")
+
 
 if __name__ == "__main__":
     main()
