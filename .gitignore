@@ -2,3 +2,5 @@
 *.pdf
 .streamlit/
 *.md
+.devcontainer/
+*.json
