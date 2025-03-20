@@ -4,4 +4,3 @@
 *.md
 .devcontainer/
 *.json
-legacy/

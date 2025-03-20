@@ -1,0 +1,42 @@
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+
+private_key_str = """-----BEGIN PRIVATE KEY-----
+MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC6VCfEIfk07VZj
+45UyVG73uOWHYiEZRFiM8Y9z2EuUn62Wzw3aoyS7YuMXz8d/H0qqmn5bMi6/TO/r
+0j5u16ArsClxva9d3x8qLSsKXQI4Fy1g3a+wiws8O2qx4G32cz1zaK611MGFhoii
+f80ZdcunyRmN0s39PzfAs+5/Wqw8Zl/iGYIHFNFuWZtR87qY4IC9lu8L2TM6hgH6
+pgwehmiBeHyhYoTZ2sZW5J3bWE8IwrEB8X69q8WII+/oKoeQ5DrzjJQqKOaJLEbI
+R3Pk5c+R9pJMFz5bkcaukbJXTxAZZP7EbgjkvRnbp827vLhowWhpq/3/wQcyfw51
+mOxgcwhjAgMBAAECggEAOJczprGMz0LgMKFf4HPdahZ5e9dVZyenX1NEdvIz7lVa
+8wk603MmRlVf1I0SMa1Oz6bxhoAky4wx+CUYOjD6IBq2U6nBN9j6zaP/RPv/nwqH
+CTr7T7rDNE11d8XKkAXrHYCnQ2l1RzkXiYcYQ0nQC0scHENwtaA8LiZX4s0mr4cA
+6w71scIAKpMYZp8ixOA4qtJ+CH2ETog/bn8FmNhjnNv1+VUjQx9T7RgQSusTJWV1
+7bqi+PfXGGZaNI3WsTKTLqL1QxZgzOV6dpzeGVHFLg78xgt2tz7UtaOPwwCyG8mJ
+xWDDYv1Nagji38Yu6qKOQHDqHRHN1ry7pJNw/Nj2lQKBgQDyLNJ2UHHtQjRqJPLG
+X8igVCgXJEl6av/UfX+n5Vo6xikgFXtvq25tJAWDYN3ozKS6vy164yeQ2ZGa1G46
+vN5Q3JeeDVynkCEJOTDXxKc+8cj5G/DFRdB9RUTKuhjHIghfRrCgSBbrvppa0xTf
+qTIXdsXRpaQn7ZjuSvZMM8OtjQKBgQDE9y/5vkRcYxlGvDPFViqnWgQ7BXAV4Azj
+ey0kfYSvW9HKjysD+Cwx8LTCOUDPwbUIzE+srxrqPk+6aC01EPhLtIA+z6CnVvRR
+GcZt2SKkkCaQuzYVWTTDd25+XKX3NoDGk/1bzhyYrcc1GeoEJSBzyLSCGWh3XiAr
+tk19Hfc5rwKBgQDEqSlv8vvRVAYEfGS6O2ZM7Ipx4IHa67E8+X0E9vdC61DSQR+w
+G2LdNndTrQIH3seW71EbjgO/WS8osIGjKWTP/ZMSQn+PgzeQqeTEE2pNb0NpKAtp
+57vbPrkSd/VPII/z7w/X2TLj1jC6uNcmmduXulgCW6Tm18dtG2rPjunEsQKBgQCi
+uZVpP0g7C6RWTCZ5YjbbDANyv4tah0AesCUbgJeeSL2KG73uCZp5p+Oukp55BhAK
+tMEeaYxS+ifkWS0AKoT4BqftPJv9pFk0p5bIKhv02SMDb6e++3QcCQ/AVcrH8r9x
+T9KBhkcZ3Hg35rDvu7yT6701vsgP1jO96V8bfyZBAQKBgQCPQNOqDfaG3anaBg3R
+TA69yjI69V38w5U7KeFNYu1WW3LrILx4ePclOyuFCvgM+vmKG9vfzaOkSesw7Ghz
+3MnG5QY49FzWNjkiIyIvJHUQya4PT1bXaQhyvgWUb3N7fTEVEE9xYAgXSzqiwzX1
+QSWsb6/kY3mlsEnAx4pJr8Wumg==
+-----END PRIVATE KEY-----
+"""
+
+try:
+    private_key = serialization.load_pem_private_key(
+        private_key_str.encode(),
+        password=None,
+        backend=default_backend()
+    )
+    print("Private key loaded successfully.")
+except Exception as e:
+    print(f"Failed to load private key: {e}")
