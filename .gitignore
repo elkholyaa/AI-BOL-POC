@@ -1,3 +1,6 @@
 .venv/
 *.pdf
 .streamlit/
+*.md
+.devcontainer/
+*.json
