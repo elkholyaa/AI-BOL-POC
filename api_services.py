@@ -2,7 +2,7 @@
 """
 Purpose:
     This module handles all external API interactions for the AI-BOL-POC application.
-    It includes functions to call GPT-4o-mini for structured Bill of Lading extraction,
+    It includes functions to call GPT-4o-mini and GPT-4o for structured Bill of Lading extraction,
     as well as OCR functions using Google Cloud Vision, GPT-4 image API, and Mistral OCR.
 Role:
     - Provides API key retrieval functions from Streamlit secrets.
@@ -96,6 +96,54 @@ def call_gpt4o_mini_text_api(pdf_text, api_key):
         st.error(f"OpenAI error (GPT-4o-mini text-based): {e}")
         return None
 
+def call_gpt4o_text_api(pdf_text, api_key):
+    """
+    Sends the combined PDF text to GPT-4o for structured Bill of Lading extraction.
+    This function is intended for image-based PDFs when the user selects GPT-4o for extraction.
+    Returns the API response.
+    """
+    prompt = (
+        "You are given text from a Bill of Lading document. "
+        "Return all fields exactly as found in the text, without summarizing or truncating. "
+        "Use null for missing fields.\n\n"
+        "Extract the following fields:\n"
+        "  1. Basic Fields:\n"
+        "     - Bill of Lading No.\n"
+        "     - Shipper\n"
+        "     - Consignee\n"
+        "     - Port of Loading\n"
+        "     - Port of Discharge\n\n"
+        "  2. Additional Details:\n"
+        "     - NOTIFY PARTIES\n"
+        "     - PORT OF DISCHARGE AGENT\n"
+        "     - VESSEL AND VOYAGE NO\n"
+        "     - BOOKING REF.\n"
+        "     - Number of Containers\n"
+        "     - container_info (array of objects): container_number, seal_number, container_size, "
+        "       tare_weight, description_of_packages_and_goods, gross_cargo_weight\n\n"
+        "Return the result in JSON format with keys:\n"
+        "  - bill_of_lading_number, shipper, consignee, port_of_loading, port_of_discharge,\n"
+        "    notify_parties, port_of_discharge_agent, vessel_and_voyage_no, booking_ref,\n"
+        "    number_of_containers, container_info.\n\n"
+        f"Text:\n'''{pdf_text}'''"
+    )
+    openai.api_key = api_key
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an assistant that processes Bill of Lading text and returns structured JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=3000
+        )
+        return response
+    except openai.error.OpenAIError as e:
+        st.error(f"OpenAI error (GPT-4o text-based): {e}")
+        return None
+
 def call_gpt4_image_api(image, page_index, api_key):
     """
     Calls GPT-4 image API to extract text from a scanned page image.
@@ -172,7 +220,7 @@ def call_google_vision_ocr(image, gcv_api_key):
 def call_mistral_ocr(image, mistral_api_key):
     """
     Uses Mistral OCR to extract text from an image.
-    Returns the extracted text.
+    Returns the concatenated extracted text from all pages.
     """
     # Upload image to Mistral
     buffered = BytesIO()
@@ -233,5 +281,8 @@ def call_mistral_ocr(image, mistral_api_key):
     if not pages:
         st.warning("Mistral OCR returned no pages.")
         return ""
-    # Return the OCR result from the first page's markdown field.
-    return pages[0].get("markdown", "")
+    # Concatenate text from all pages.
+    full_text = ""
+    for page in pages:
+        full_text += page.get("markdown", "") + "\n"
+    return full_text.strip()

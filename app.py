@@ -2,14 +2,18 @@
 """
 Purpose:
     This is the main entry point for the AI-BOL-POC application.
-    It provides a Streamlit-based UI for uploading PDF files and displaying extracted Bill of Lading information.
+    It provides a Streamlit-based UI for uploading PDF files and displaying
+    extracted Bill of Lading information. For image-based PDFs (i.e. when OCR fallback occurs),
+    the user can choose between GPT-4o and GPT-4o-mini for structured extraction.
+    For text-based PDFs, extraction is always processed by GPT-4o-mini.
 Role:
-    - Handles user interactions (file upload, OCR method selection).
-    - Orchestrates the PDF processing and API extraction by calling functions from pdf_processing and api_services modules.
+    - Handles user interactions (file upload, OCR method selection, and structured extraction model selection).
+    - Orchestrates PDF processing and API extraction by calling functions from pdf_processing and api_services.
 Workflow:
-    - User uploads a PDF file.
-    - The app calls extract_text_from_pdf_with_image_fallback from pdf_processing.
-    - The extracted text is sent to GPT-4o-mini via call_gpt4o_mini_text_api from api_services.
+    - User uploads a PDF and selects an OCR method.
+    - The app extracts text using pdfplumber or the chosen OCR fallback.
+    - If OCR fallback was used (i.e. image-based content), a new option appears to select the extraction model.
+    - The extracted text is then sent to the selected GPT model for structured data extraction.
     - The structured JSON response is parsed and displayed in tables.
 """
 
@@ -17,7 +21,7 @@ import streamlit as st
 import json
 import pandas as pd
 from pdf_processing import extract_text_from_pdf_with_image_fallback
-from api_services import call_gpt4o_mini_text_api, get_api_key
+from api_services import call_gpt4o_mini_text_api, call_gpt4o_text_api, get_api_key
 
 # Hide default Streamlit UI elements with custom CSS.
 hide_streamlit_style = """
@@ -48,6 +52,9 @@ def main():
         index=0
     )
 
+    # Checkbox to dump the raw extracted text for debugging.
+    dump_raw = st.checkbox("Dump extracted text for debugging", value=False)
+
     api_key = get_api_key()
     if not api_key:
         return
@@ -61,14 +68,28 @@ def main():
             return
 
         with st.spinner("Processing PDF..."):
-            combined_text, image_usage, gcv_count = extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice)
+            combined_text, image_usage, gcv_count, ocr_fallback_count = extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice)
 
         if not combined_text:
             st.warning("No text could be extracted from the PDF (even after OCR).")
             return
 
-        # Send the combined text to GPT-4o-mini for structured Bill of Lading extraction.
-        response = call_gpt4o_mini_text_api(combined_text, api_key)
+        # If the user opts in, display the raw extracted text for inspection.
+        if dump_raw:
+            st.subheader("Extracted Text Dump")
+            st.text_area("Extracted Text", combined_text, height=300)
+
+        # Determine which structured extraction model to use.
+        # For text-based PDFs (no OCR fallback), always use GPT-4o-mini.
+        if ocr_fallback_count > 0:
+            extraction_model = st.radio("Select structured extraction model for OCR fallback:", ("GPT-4o", "GPT-4o-mini"), index=0)
+            if extraction_model == "GPT-4o":
+                response = call_gpt4o_text_api(combined_text, api_key)
+            else:
+                response = call_gpt4o_mini_text_api(combined_text, api_key)
+        else:
+            response = call_gpt4o_mini_text_api(combined_text, api_key)
+
         if not response:
             return
 
@@ -76,7 +97,7 @@ def main():
             message_content = response["choices"][0]["message"]["content"]
             prediction = json.loads(message_content)
         except (KeyError, json.JSONDecodeError) as e:
-            st.error(f"Failed to decode JSON from GPT-4o-mini response: {e}")
+            st.error(f"Failed to decode JSON from GPT extraction response: {e}")
             st.text("Raw response:")
             st.text(json.dumps(response, indent=2))
             return
@@ -198,8 +219,11 @@ def main():
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
         total_tokens = usage.get("total_tokens", 0)
-        cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100
-        cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100
+
+        # Update cost calculation as per official OpenAI pricing.
+        # Cost per 1K prompt tokens: $0.03, per 1K output tokens: $0.06.
+        cost_prompt_cents = (prompt_tokens / 1000) * 0.03 * 100
+        cost_completion_cents = (completion_tokens / 1000) * 0.06 * 100
         text_cost = cost_prompt_cents + cost_completion_cents
 
         if ocr_choice == "Google Cloud Vision":
