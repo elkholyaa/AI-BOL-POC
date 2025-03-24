@@ -4,11 +4,14 @@ Purpose:
     This module handles all external API interactions for the AI-BOL-POC application.
     It includes functions to call GPT-4o-mini and GPT-4o for structured Bill of Lading extraction,
     as well as OCR functions using Google Cloud Vision, GPT-4 image API, and Mistral OCR.
+    It also loads a JSON template from "templates/msc.json" to guide the extraction process.
 Role:
     - Provides API key retrieval functions from Streamlit secrets.
     - Contains functions to communicate with external services, keeping the main app logic clean.
+    - Appends structured extraction instructions from a JSON template into the prompt.
 Workflow:
     - The functions in this module are imported and used by pdf_processing.py and app.py.
+    - When constructing the prompt for GPT models, the content of the JSON template is read and appended.
 """
 
 import streamlit as st
@@ -49,11 +52,25 @@ def get_mistral_ocr_api_key():
         st.error("Mistral OCR API key is missing in the secrets.")
         return None
 
+def load_template_instructions():
+    """
+    Loads the JSON template from templates/msc.json to guide extraction.
+    """
+    try:
+        with open("templates/msc.json", "r") as f:
+            template_instructions = f.read()
+        return template_instructions
+    except Exception as e:
+        st.error(f"Error loading extraction template: {e}")
+        return ""
+
 def call_gpt4o_mini_text_api(pdf_text, api_key):
     """
     Sends the combined PDF text to GPT-4o-mini for structured Bill of Lading extraction.
+    Appends the JSON template instructions to the prompt.
     Returns the API response.
     """
+    template_instructions = load_template_instructions()
     prompt = (
         "You are given text from a Bill of Lading document. "
         "Return all fields exactly as found in the text, without summarizing or truncating. "
@@ -77,7 +94,9 @@ def call_gpt4o_mini_text_api(pdf_text, api_key):
         "  - bill_of_lading_number, shipper, consignee, port_of_loading, port_of_discharge,\n"
         "    notify_parties, port_of_discharge_agent, vessel_and_voyage_no, booking_ref,\n"
         "    number_of_containers, container_info.\n\n"
-        f"Text:\n'''{pdf_text}'''"
+        f"Text:\n'''{pdf_text}'''\n\n"
+        "Use the following JSON template to guide your extraction:\n"
+        f"{template_instructions}"
     )
     openai.api_key = api_key
     try:
@@ -99,9 +118,11 @@ def call_gpt4o_mini_text_api(pdf_text, api_key):
 def call_gpt4o_text_api(pdf_text, api_key):
     """
     Sends the combined PDF text to GPT-4o for structured Bill of Lading extraction.
+    Appends the JSON template instructions to the prompt.
     This function is intended for image-based PDFs when the user selects GPT-4o for extraction.
     Returns the API response.
     """
+    template_instructions = load_template_instructions()
     prompt = (
         "You are given text from a Bill of Lading document. "
         "Return all fields exactly as found in the text, without summarizing or truncating. "
@@ -125,7 +146,9 @@ def call_gpt4o_text_api(pdf_text, api_key):
         "  - bill_of_lading_number, shipper, consignee, port_of_loading, port_of_discharge,\n"
         "    notify_parties, port_of_discharge_agent, vessel_and_voyage_no, booking_ref,\n"
         "    number_of_containers, container_info.\n\n"
-        f"Text:\n'''{pdf_text}'''"
+        f"Text:\n'''{pdf_text}'''\n\n"
+        "Use the following JSON template to guide your extraction:\n"
+        f"{template_instructions}"
     )
     openai.api_key = api_key
     try:
