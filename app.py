@@ -3,18 +3,22 @@
 Purpose:
     This is the main entry point for the AI-BOL-POC application.
     It provides a Streamlit-based UI for uploading PDF files and displaying
-    extracted Bill of Lading information. For image-based PDFs (i.e. when OCR fallback occurs),
+    extracted Bill of Lading information. For image-based PDFs (when OCR fallback occurs),
     the user can choose between GPT-4o and GPT-4o-mini for structured extraction.
-    For text-based PDFs, extraction is always processed by GPT-4o-mini.
+    However, the cost calculation is always based on GPT-4o-mini pricing from the official docs.
 Role:
     - Handles user interactions (file upload, OCR method selection, and structured extraction model selection).
     - Orchestrates PDF processing and API extraction by calling functions from pdf_processing and api_services.
 Workflow:
     - User uploads a PDF and selects an OCR method.
     - The app extracts text using pdfplumber or the chosen OCR fallback.
-    - If OCR fallback was used (i.e. image-based content), a new option appears to select the extraction model.
-    - The extracted text is then sent to the selected GPT model for structured data extraction.
-    - The structured JSON response is parsed and displayed in tables.
+    - If OCR fallback occurs, a radio button appears for selecting the structured extraction model,
+      defaulting to GPT-4o-mini.
+    - The extracted text is then sent to the chosen model for structured extraction.
+    - The cost is calculated using GPT-4o-mini pricing:
+         * $0.15 per 1,000,000 input tokens,
+         * $0.60 per 1,000,000 output tokens.
+    - The structured JSON response is parsed and displayed in tables along with token usage cost.
 """
 
 import streamlit as st
@@ -47,7 +51,7 @@ def main():
 
     # Let user select the OCR method for image-based processing.
     ocr_choice = st.radio(
-        "Select model for image-based processing:",
+        "Select OCR method for pages without text:",
         ("Google Cloud Vision", "GPT-4", "Mistral OCR"),
         index=0
     )
@@ -79,10 +83,14 @@ def main():
             st.subheader("Extracted Text Dump")
             st.text_area("Extracted Text", combined_text, height=300)
 
-        # Determine which structured extraction model to use.
         # For text-based PDFs (no OCR fallback), always use GPT-4o-mini.
         if ocr_fallback_count > 0:
-            extraction_model = st.radio("Select structured extraction model for OCR fallback:", ("GPT-4o", "GPT-4o-mini"), index=0)
+            extraction_model = st.radio(
+                "Select structured extraction model for OCR fallback:",
+                ("GPT-4o", "GPT-4o-mini"),
+                index=1  # default to GPT-4o-mini
+            )
+            # Although the user can choose, cost calculation remains based on GPT-4o-mini pricing.
             if extraction_model == "GPT-4o":
                 response = call_gpt4o_text_api(combined_text, api_key)
             else:
@@ -218,28 +226,14 @@ def main():
         usage = response.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
-
-        # Update cost calculation as per official OpenAI pricing.
-        # Cost per 1K prompt tokens: $0.03, per 1K output tokens: $0.06.
-        cost_prompt_cents = (prompt_tokens / 1000) * 0.03 * 100
-        cost_completion_cents = (completion_tokens / 1000) * 0.06 * 100
+        # Calculate cost using GPT-4o-mini pricing:
+        #   $0.15 per 1,000,000 prompt tokens and $0.60 per 1,000,000 output tokens.
+        cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100  # in cents
+        cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100  # in cents
         text_cost = cost_prompt_cents + cost_completion_cents
 
-        if ocr_choice == "Google Cloud Vision":
-            st.markdown("**Image-based Extraction (Google Cloud Vision)**")
-            st.markdown(f"Processed {gcv_count} pages with Google Cloud Vision => 0.00 cents (example)")
-            image_cost_cents = 0
-        elif ocr_choice == "GPT-4":
-            st.markdown("**Image-based Extraction (GPT-4)**")
-            image_cost_cents = 0
-        else:
-            st.markdown("**Image-based Extraction (Mistral OCR)**")
-            st.markdown("Cost calculation for Mistral OCR is not implemented. Refer to docs.")
-            image_cost_cents = 0
-
-        total_cost = text_cost + image_cost_cents
-        st.markdown(f"**Total Combined Estimated Cost:** {total_cost:.2f} cents")
+        st.markdown("**Extraction Method:** GPT-4o-mini (cost based on GPT-4o-mini pricing)")
+        st.markdown(f"Token usage cost: {text_cost:.2f} cents")
 
 if __name__ == "__main__":
     main()
