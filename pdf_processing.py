@@ -34,7 +34,7 @@ def extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice):
       - If a page has no text, uses the selected OCR method.
     Parameters:
       file_bytes: Byte content of the PDF.
-      ocr_choice: The OCR method to use when text extraction fails ("Google Cloud Vision", "GPT-4", or "Mistral OCR").
+      ocr_choice: The OCR method to use when text extraction fails ("Google Cloud Vision", "GPT-4o", or "Mistral OCR").
     Returns:
       A tuple (combined_text, usage_dict, gcv_page_count, ocr_fallback_count) where:
          combined_text: The concatenated text from all pages.
@@ -72,7 +72,7 @@ def extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice):
                         combined_text += ocr_text + "\n"
                         gcv_page_count += 1
 
-                    elif ocr_choice == "GPT-4":
+                    elif ocr_choice == "GPT-4o":
                         api_key = get_api_key()
                         if not api_key:
                             continue

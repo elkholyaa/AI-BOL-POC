@@ -1,26 +1,3 @@
-# app.py
-"""
-Purpose:
-    This is the main entry point for the AI-BOL-POC application.
-    It provides a Streamlit-based UI for uploading PDF files and displaying
-    extracted Bill of Lading information. For image-based PDFs (when OCR fallback occurs),
-    the user can choose between GPT-4o and GPT-4o-mini for structured extraction.
-    The cost calculation is performed using actual token counts and official pricing:
-       - For GPT-4o-mini: $0.15 per 1M input tokens and $0.60 per 1M output tokens.
-       - For GPT-4o: $2.50 per 1M input tokens and $10.00 per 1M output tokens.
-Role:
-    - Handles user interactions (file upload, OCR method selection, and structured extraction model selection).
-    - Orchestrates PDF processing and API extraction by calling functions from pdf_processing and api_services.
-Workflow:
-    - User uploads a PDF and selects an OCR method.
-    - The app extracts text using pdfplumber or the chosen OCR fallback.
-    - If OCR fallback occurs, a radio button appears for selecting the structured extraction model,
-      defaulting to GPT-4o-mini.
-    - The extracted text is sent to the selected model for structured extraction.
-    - The cost is calculated using the actual token counts from the API response.
-    - The structured JSON response is parsed and displayed in tables along with token usage cost.
-"""
-
 import streamlit as st
 import json
 import pandas as pd
@@ -52,7 +29,7 @@ def main():
     # Let user select the OCR method for image-based processing.
     ocr_choice = st.radio(
         "Select OCR method for pages without text:",
-        ("Google Cloud Vision", "GPT-4", "Mistral OCR"),
+        ("Google Cloud Vision", "GPT-4o", "Mistral OCR"),
         index=0
     )
 
@@ -72,6 +49,11 @@ def main():
             return
 
         with st.spinner("Processing PDF..."):
+            # The extraction function now returns:
+            #   combined_text: the extracted text,
+            #   image_usage: for GPT-4o OCR, expected to be a dict with token counts,
+            #   gcv_count: token count (or page count) if Google Cloud Vision was used,
+            #   ocr_fallback_count: number of pages for which OCR fallback occurred.
             combined_text, image_usage, gcv_count, ocr_fallback_count = extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice)
 
         if not combined_text:
@@ -222,30 +204,71 @@ def main():
             })
             st.table(df_containers)
 
-        # Display API Token Usage and Cost.
+        # -------------------- API Token Usage and Cost Calculation --------------------
         st.subheader("API Token Usage and Cost")
+
+        # Get token usage from the structured extraction API call.
         usage = response.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
+        # Retrieve cached tokens if provided (for GPT-4o pricing)
+        cached_tokens = usage.get("cached_input_tokens", 0)
 
-        # Calculate cost based on selected extraction model.
-        if ocr_fallback_count > 0 and extraction_model == "GPT-4o":
-            # Using GPT-4o pricing:
-            #   $2.50 per 1M input tokens and $10.00 per 1M output tokens.
-            cost_prompt_cents = (prompt_tokens / 1_000_000) * 2.50 * 100
-            cost_completion_cents = (completion_tokens / 1_000_000) * 10.00 * 100
-            pricing_info = "GPT-4o"
+        # Calculate structured extraction cost.
+        if extraction_model == "GPT-4o":
+            extraction_cost_prompt_cents = (prompt_tokens / 1_000_000) * 2.50 * 100
+            extraction_cost_cached_cents = (cached_tokens / 1_000_000) * 1.25 * 100
+            extraction_cost_completion_cents = (completion_tokens / 1_000_000) * 10.00 * 100
+            extraction_cost = extraction_cost_prompt_cents + extraction_cost_cached_cents + extraction_cost_completion_cents
+            extraction_pricing_info = "GPT-4o"
         else:
-            # Default to GPT-4o-mini pricing:
-            #   $0.15 per 1M input tokens and $0.60 per 1M output tokens.
-            cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100
-            cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100
-            pricing_info = "GPT-4o-mini"
+            extraction_cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100
+            extraction_cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100
+            extraction_cost = extraction_cost_prompt_cents + extraction_cost_completion_cents
+            extraction_pricing_info = "GPT-4o-mini"
 
-        text_cost = cost_prompt_cents + cost_completion_cents
+        # Calculate OCR cost if OCR fallback occurred.
+        ocr_cost = 0
+        if ocr_fallback_count > 0:
+            if ocr_choice in ("GPT-4o", "GPT-4o-2024-08-06"):
+                # For GPT-4o OCR pricing, expect image_usage to be a dict with token details.
+                if isinstance(image_usage, dict):
+                    ocr_prompt_tokens = image_usage.get("prompt_tokens", 0)
+                    ocr_cached_tokens = image_usage.get("cached_input_tokens", 0)
+                    ocr_completion_tokens = image_usage.get("completion_tokens", 0)
+                else:
+                    # Fallback: if image_usage is just a count, assume all as prompt tokens.
+                    ocr_prompt_tokens = image_usage
+                    ocr_cached_tokens = 0
+                    ocr_completion_tokens = 0
+                ocr_cost_prompt_cents = (ocr_prompt_tokens / 1_000_000) * 2.50 * 100
+                ocr_cost_cached_cents = (ocr_cached_tokens / 1_000_000) * 1.25 * 100
+                ocr_cost_completion_cents = (ocr_completion_tokens / 1_000_000) * 10.00 * 100
+                ocr_cost = ocr_cost_prompt_cents + ocr_cost_cached_cents + ocr_cost_completion_cents
+                ocr_pricing_info = "GPT-4o OCR"
+            elif ocr_choice == "Google Cloud Vision":
+                # Assume a cost of 10 cents per page.
+                ocr_cost = ocr_fallback_count * 10  # in cents
+                ocr_pricing_info = "Google Cloud Vision OCR"
+            elif ocr_choice == "Mistral OCR":
+                # Assume a cost of 5 cents per page.
+                ocr_cost = ocr_fallback_count * 5  # in cents
+                ocr_pricing_info = "Mistral OCR"
+            else:
+                st.error(f"Unknown OCR method: {ocr_choice}")
+                ocr_pricing_info = "Unknown OCR method"
+        else:
+            ocr_pricing_info = "No OCR cost (no OCR fallback)"
 
-        st.markdown(f"**Extraction Method:** {pricing_info} (cost calculated based on actual token counts)")
-        st.markdown(f"Token usage cost: {text_cost:.2f} cents")
+        total_cost = extraction_cost + ocr_cost
+
+        st.markdown(f"**Structured Extraction Method:** {extraction_pricing_info} (cost based on token usage)")
+        st.markdown(f"Structured Extraction Token Cost: {extraction_cost:.2f} cents")
+        if ocr_fallback_count > 0:
+            st.markdown(f"**OCR Method:** {ocr_pricing_info} (cost based on usage)")
+            st.markdown(f"OCR Cost: {ocr_cost:.2f} cents")
+        st.markdown(f"**Total API Token Usage and Cost:** {total_cost:.2f} cents")
+        # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
