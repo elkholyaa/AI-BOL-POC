@@ -5,7 +5,9 @@ Purpose:
     It provides a Streamlit-based UI for uploading PDF files and displaying
     extracted Bill of Lading information. For image-based PDFs (when OCR fallback occurs),
     the user can choose between GPT-4o and GPT-4o-mini for structured extraction.
-    However, the cost calculation is always based on GPT-4o-mini pricing from the official docs.
+    The cost calculation is performed using actual token counts and official pricing:
+       - For GPT-4o-mini: $0.15 per 1M input tokens and $0.60 per 1M output tokens.
+       - For GPT-4o: $2.50 per 1M input tokens and $10.00 per 1M output tokens.
 Role:
     - Handles user interactions (file upload, OCR method selection, and structured extraction model selection).
     - Orchestrates PDF processing and API extraction by calling functions from pdf_processing and api_services.
@@ -14,10 +16,8 @@ Workflow:
     - The app extracts text using pdfplumber or the chosen OCR fallback.
     - If OCR fallback occurs, a radio button appears for selecting the structured extraction model,
       defaulting to GPT-4o-mini.
-    - The extracted text is then sent to the chosen model for structured extraction.
-    - The cost is calculated using GPT-4o-mini pricing:
-         * $0.15 per 1,000,000 input tokens,
-         * $0.60 per 1,000,000 output tokens.
+    - The extracted text is sent to the selected model for structured extraction.
+    - The cost is calculated using the actual token counts from the API response.
     - The structured JSON response is parsed and displayed in tables along with token usage cost.
 """
 
@@ -83,6 +83,7 @@ def main():
             st.subheader("Extracted Text Dump")
             st.text_area("Extracted Text", combined_text, height=300)
 
+        # Determine which structured extraction model to use.
         # For text-based PDFs (no OCR fallback), always use GPT-4o-mini.
         if ocr_fallback_count > 0:
             extraction_model = st.radio(
@@ -90,12 +91,12 @@ def main():
                 ("GPT-4o", "GPT-4o-mini"),
                 index=1  # default to GPT-4o-mini
             )
-            # Although the user can choose, cost calculation remains based on GPT-4o-mini pricing.
             if extraction_model == "GPT-4o":
                 response = call_gpt4o_text_api(combined_text, api_key)
             else:
                 response = call_gpt4o_mini_text_api(combined_text, api_key)
         else:
+            extraction_model = "GPT-4o-mini"
             response = call_gpt4o_mini_text_api(combined_text, api_key)
 
         if not response:
@@ -226,13 +227,24 @@ def main():
         usage = response.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
-        # Calculate cost using GPT-4o-mini pricing:
-        #   $0.15 per 1,000,000 prompt tokens and $0.60 per 1,000,000 output tokens.
-        cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100  # in cents
-        cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100  # in cents
+
+        # Calculate cost based on selected extraction model.
+        if ocr_fallback_count > 0 and extraction_model == "GPT-4o":
+            # Using GPT-4o pricing:
+            #   $2.50 per 1M input tokens and $10.00 per 1M output tokens.
+            cost_prompt_cents = (prompt_tokens / 1_000_000) * 2.50 * 100
+            cost_completion_cents = (completion_tokens / 1_000_000) * 10.00 * 100
+            pricing_info = "GPT-4o"
+        else:
+            # Default to GPT-4o-mini pricing:
+            #   $0.15 per 1M input tokens and $0.60 per 1M output tokens.
+            cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100
+            cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100
+            pricing_info = "GPT-4o-mini"
+
         text_cost = cost_prompt_cents + cost_completion_cents
 
-        st.markdown("**Extraction Method:** GPT-4o-mini (cost based on GPT-4o-mini pricing)")
+        st.markdown(f"**Extraction Method:** {pricing_info} (cost calculated based on actual token counts)")
         st.markdown(f"Token usage cost: {text_cost:.2f} cents")
 
 if __name__ == "__main__":
