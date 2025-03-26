@@ -11,8 +11,8 @@ Workflow:
     - Opens the PDF using pdfplumber.
     - For each page, attempts to extract text.
     - If no text is found, calls the selected OCR function and counts the fallback.
-    - Returns the combined text, API token usage, number of pages processed with Google Cloud Vision,
-      and the total count of pages that required OCR fallback.
+    - Returns the combined text, a dictionary tracking API token usage, the number of pages
+      processed using Google Cloud Vision, and the total count of pages that required OCR fallback.
 """
 
 import streamlit as st
@@ -28,20 +28,6 @@ from api_services import (
 )
 
 def extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice):
-    """
-    Processes the PDF file:
-      - Uses pdfplumber to extract text.
-      - If a page has no text, uses the selected OCR method.
-    Parameters:
-      file_bytes: Byte content of the PDF.
-      ocr_choice: The OCR method to use when text extraction fails ("Google Cloud Vision", "GPT-4o", or "Mistral OCR").
-    Returns:
-      A tuple (combined_text, usage_dict, gcv_page_count, ocr_fallback_count) where:
-         combined_text: The concatenated text from all pages.
-         usage_dict: Dictionary tracking API token usage (for GPT-4 image API).
-         gcv_page_count: Number of pages processed with Google Cloud Vision.
-         ocr_fallback_count: Total number of pages that required OCR fallback.
-    """
     combined_text = ""
     usage_dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     gcv_page_count = 0
@@ -56,10 +42,8 @@ def extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice):
             for i, page in enumerate(pdf.pages, start=1):
                 page_text = page.extract_text()
                 if page_text and page_text.strip():
-                    # Text successfully extracted using pdfplumber.
                     combined_text += page_text + "\n"
                 else:
-                    # OCR fallback is required.
                     st.info(f"No text detected on page {i}; using {ocr_choice} for OCR.")
                     ocr_fallback_count += 1
                     pil_image = page.to_image(resolution=300).original
@@ -78,7 +62,6 @@ def extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice):
                             continue
                         gpt_text, usage = call_gpt4_image_api(pil_image, i, api_key)
                         combined_text += gpt_text + "\n"
-                        # Accumulate token usage.
                         for k in usage_dict:
                             usage_dict[k] += usage.get(k, 0)
 
