@@ -18,6 +18,7 @@ Workflow:
 
 from openpyxl import load_workbook, Workbook
 from openpyxl.utils.exceptions import InvalidFileException
+from copy import copy  # Import copy to duplicate style objects
 
 def append_row_to_excel(row_data, file_path="bol.xlsx"):
     """
@@ -60,12 +61,12 @@ def append_row_to_excel(row_data, file_path="bol.xlsx"):
         for col_idx, new_cell in enumerate(ws[new_row_idx], start=1):
             prev_cell = ws.cell(row=previous_last_row_idx, column=col_idx)
             if prev_cell.has_style:
-                new_cell.font = prev_cell.font
-                new_cell.border = prev_cell.border
-                new_cell.fill = prev_cell.fill
+                new_cell.font = copy(prev_cell.font)
+                new_cell.border = copy(prev_cell.border)
+                new_cell.fill = copy(prev_cell.fill)
                 new_cell.number_format = prev_cell.number_format
-                new_cell.protection = prev_cell.protection
-                new_cell.alignment = prev_cell.alignment
+                new_cell.protection = copy(prev_cell.protection)
+                new_cell.alignment = copy(prev_cell.alignment)
 
     wb.save(file_path)
 
