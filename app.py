@@ -1,3 +1,25 @@
+# app.py
+"""
+Purpose:
+  This file is the main entry point for the AI-BOL-POC application.
+  It handles PDF processing, structured data extraction via GPT models, and now integrates a new feature
+  to append extracted or custom Bill of Lading data into an Excel file ("bol.xlsx").
+  
+Role:
+  - Provides the Streamlit UI for uploading PDFs, selecting OCR and extraction methods.
+  - Processes the PDF to extract text and structured data.
+  - Displays parsed data, token usage, and cost calculations.
+  - Integrates an Excel appending feature that allows users to add a row of data to "bol.xlsx".
+  
+Workflow:
+  - The user uploads a PDF file.
+  - The app extracts text from the PDF (using pdfplumber and OCR fallback if needed).
+  - The extracted text is sent to GPT-4o-mini or GPT-4o to parse out Bill of Lading fields.
+  - Parsed information is displayed in formatted tables.
+  - API token usage and cost are calculated and shown.
+  - A new section lets users append a row (pre-populated with parsed data if available) to an Excel file.
+"""
+
 import streamlit as st
 import json
 import pandas as pd
@@ -9,7 +31,7 @@ hide_streamlit_style = """
 <style>
 .viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_,
 .viewerBadge_link__1S137, .viewerBadge_text__1JaDK, header, footer {
-    display: none !important;
+ display: none !important;
 }
 </style>
 """
@@ -25,48 +47,43 @@ def format_field(value):
 
 def main():
     st.markdown("<h1 style='text-align: center; color: red;'>شركة خط الحرير</h1>", unsafe_allow_html=True)
-
-    # Let user select the OCR method for image-based processing.
+    
+    # Let user select the OCR method for pages without text.
     ocr_choice = st.radio(
         "Select OCR method for pages without text:",
         ("Google Cloud Vision", "GPT-4o", "Mistral OCR"),
         index=0
     )
-
+    
     # Checkbox to dump the raw extracted text for debugging.
     dump_raw = st.checkbox("Dump extracted text for debugging", value=False)
-
+    
     api_key = get_api_key()
     if not api_key:
         return
-
+    
     # File uploader for PDF files.
     uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
+    
     if uploaded_file:
         file_bytes = uploaded_file.read()
         if not file_bytes:
             st.error("Uploaded file is empty or could not be read.")
             return
-
         with st.spinner("Processing PDF..."):
-            # The extraction function now returns:
-            #   combined_text: the extracted text,
-            #   image_usage: for GPT-4o OCR, expected to be a dict with token counts,
-            #   gcv_count: page count if Google Cloud Vision was used,
-            #   ocr_fallback_count: number of pages that required OCR fallback.
+            # The extraction function returns combined text and OCR usage stats.
             combined_text, image_usage, gcv_count, ocr_fallback_count = extract_text_from_pdf_with_image_fallback(file_bytes, ocr_choice)
-
+        
         if not combined_text:
             st.warning("No text could be extracted from the PDF (even after OCR).")
             return
-
-        # If the user opts in, display the raw extracted text for inspection.
+        
+        # Option to display the raw extracted text.
         if dump_raw:
             st.subheader("Extracted Text Dump")
             st.text_area("Extracted Text", combined_text, height=300)
-
+        
         # Determine which structured extraction model to use.
-        # For text-based PDFs (no OCR fallback), always use GPT-4o-mini.
         if ocr_fallback_count > 0:
             extraction_model = st.radio(
                 "Select structured extraction model for OCR fallback:",
@@ -80,10 +97,10 @@ def main():
         else:
             extraction_model = "GPT-4o-mini"
             response = call_gpt4o_mini_text_api(combined_text, api_key)
-
+        
         if not response:
             return
-
+        
         try:
             message_content = response["choices"][0]["message"]["content"]
             prediction = json.loads(message_content)
@@ -92,7 +109,7 @@ def main():
             st.text("Raw response:")
             st.text(json.dumps(response, indent=2))
             return
-
+        
         # Display "Parsed Bill of Lading Information" table.
         st.subheader("Parsed Bill of Lading Information")
         extracted_data = {
@@ -104,33 +121,33 @@ def main():
         }
         html_table = """
         <style>
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
-                background-color: #ffffff;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                border-radius: 8px;
-                overflow: hidden;
-            }
-            th, td {
-                padding: 15px;
-                text-align: left;
-                border-bottom: 1px solid #ddd;
-                vertical-align: top;
-                white-space: pre-wrap;
-                word-wrap: break-word;
-            }
-            th {
-                color: #ff0000;
-                font-weight: bold;
-                font-size: 16px;
-                background-color: #f5f5f5;
-            }
-            td {
-                color: #0000ff;
-                font-size: 14px;
-            }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: #ffffff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            vertical-align: top;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        th {
+            color: #ff0000;
+            font-weight: bold;
+            font-size: 16px;
+            background-color: #f5f5f5;
+        }
+        td {
+            color: #0000ff;
+            font-size: 14px;
+        }
         </style>
         <table>
         <tr>
@@ -142,7 +159,7 @@ def main():
             html_table += f"<td>{value}</td>"
         html_table += "</tr></table>"
         st.markdown(html_table, unsafe_allow_html=True)
-
+        
         # Display "Details" table.
         st.subheader("Details")
         details_data = {
@@ -154,33 +171,33 @@ def main():
         }
         details_table = """
         <style>
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
-                background-color: #ffffff;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                border-radius: 8px;
-                overflow: hidden;
-            }
-            th, td {
-                padding: 15px;
-                text-align: left;
-                border-bottom: 1px solid #ddd;
-                vertical-align: top;
-                white-space: pre-wrap;
-                word-wrap: break-word;
-            }
-            th {
-                color: #ff0000;
-                font-weight: bold;
-                font-size: 16px;
-                background-color: #f5f5f5;
-            }
-            td {
-                color: #0000ff;
-                font-size: 14px;
-            }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: #ffffff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            vertical-align: top;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        th {
+            color: #ff0000;
+            font-weight: bold;
+            font-size: 16px;
+            background-color: #f5f5f5;
+        }
+        td {
+            color: #0000ff;
+            font-size: 14px;
+        }
         </style>
         <table>
         """
@@ -188,55 +205,35 @@ def main():
             details_table += f"<tr><th>{key}</th><td>{value}</td></tr>"
         details_table += "</table>"
         st.markdown(details_table, unsafe_allow_html=True)
-
+        
         # Display "Container Information" if available.
         container_info = prediction.get("container_info")
         if container_info and isinstance(container_info, list) and len(container_info) > 0:
             st.subheader("Container Information")
             df_containers = pd.DataFrame(container_info)
-            # Standardize column naming if needed:
-            # df_containers = df_containers.rename(columns={
-            #     "container_number": "Container Number",
-            #     "seal_number": "Seal Number",
-            #     "container_size": "Container Size",
-            #     "tare_weight": "Tare Weight",
-            #     "description_of_packages_and_goods": "Description of Packages and Goods",
-            #     "gross_cargo_weight": "Gross Cargo Weight"
-            # })
             st.table(df_containers)
-
+        
         # -------------------- API Token Usage and Cost Calculation --------------------
         st.subheader("API Token Usage and Cost")
-
-        # Get token usage from the structured extraction API call.
         usage = response.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
-        # Retrieve cached tokens if provided (for GPT-4o pricing)
         cached_tokens = usage.get("cached_input_tokens", 0)
-
-        # Calculate structured extraction cost.
         if extraction_model == "GPT-4o":
-            # GPT-4o pricing:
-            # $2.50 per 1M prompt tokens, $1.25 per 1M cached tokens, $10.00 per 1M completion tokens
             extraction_cost_prompt_cents = (prompt_tokens / 1_000_000) * 2.50 * 100
             extraction_cost_cached_cents = (cached_tokens / 1_000_000) * 1.25 * 100
             extraction_cost_completion_cents = (completion_tokens / 1_000_000) * 10.00 * 100
             extraction_cost = extraction_cost_prompt_cents + extraction_cost_cached_cents + extraction_cost_completion_cents
             extraction_pricing_info = "GPT-4o"
         else:
-            # GPT-4o-mini pricing:
-            # $0.15 per 1M prompt tokens, $0.60 per 1M completion tokens
             extraction_cost_prompt_cents = (prompt_tokens / 1_000_000) * 0.15 * 100
             extraction_cost_completion_cents = (completion_tokens / 1_000_000) * 0.60 * 100
             extraction_cost = extraction_cost_prompt_cents + extraction_cost_completion_cents
             extraction_pricing_info = "GPT-4o-mini"
-
-        # Calculate OCR cost if OCR fallback occurred.
+        
         ocr_cost = 0
         if ocr_fallback_count > 0:
             if ocr_choice in ("GPT-4o", "GPT-4o-2024-08-06"):
-                # For GPT-4o OCR pricing, usage_dict tracks token usage
                 if isinstance(image_usage, dict):
                     ocr_prompt_tokens = image_usage.get("prompt_tokens", 0)
                     ocr_cached_tokens = image_usage.get("cached_input_tokens", 0)
@@ -251,12 +248,9 @@ def main():
                 ocr_cost = ocr_cost_prompt_cents + ocr_cost_cached_cents + ocr_cost_completion_cents
                 ocr_pricing_info = "GPT-4o OCR"
             elif ocr_choice == "Google Cloud Vision":
-                # Official Document Text Detection: ~$1.50 per 1,000 pages => 0.15 cents per page
-                # (Ignoring free tier logic for simplicity)
                 ocr_cost = ocr_fallback_count * 0.15  # in cents
                 ocr_pricing_info = "Google Cloud Vision OCR"
             elif ocr_choice == "Mistral OCR":
-                # Assume a hypothetical cost of $0.05 per page (5 cents per page).
                 ocr_cost = ocr_fallback_count * 5
                 ocr_pricing_info = "Mistral OCR"
             else:
@@ -264,16 +258,40 @@ def main():
                 ocr_pricing_info = "Unknown OCR method"
         else:
             ocr_pricing_info = "No OCR cost (no OCR fallback)"
-
+        
         total_cost = extraction_cost + ocr_cost
-
         st.markdown(f"**Structured Extraction Method:** {extraction_pricing_info} (cost based on token usage)")
         st.markdown(f"Structured Extraction Token Cost: {extraction_cost:.2f} cents")
         if ocr_fallback_count > 0:
             st.markdown(f"**OCR Method:** {ocr_pricing_info} (cost based on usage)")
             st.markdown(f"OCR Cost: {ocr_cost:.2f} cents")
         st.markdown(f"**Total API Token Usage and Cost:** {total_cost:.2f} cents")
-        # -----------------------------------------------------------------------------
+        
+        # ------------------ Excel Appending Feature Integration ------------------
+        st.subheader("Append Data to Excel")
+        with st.form("append_form", clear_on_submit=True):
+            # Pre-fill form fields with parsed data if available
+            bol_no = st.text_input("Bill of Lading No.", value=prediction.get("bill_of_lading_number", "") if 'prediction' in locals() else "")
+            shipper = st.text_input("Shipper", value=prediction.get("shipper", "") if 'prediction' in locals() else "")
+            consignee = st.text_input("Consignee", value=prediction.get("consignee", "") if 'prediction' in locals() else "")
+            port_loading = st.text_input("Port of Loading", value=prediction.get("port_of_loading", "") if 'prediction' in locals() else "")
+            port_discharge = st.text_input("Port of Discharge", value=prediction.get("port_of_discharge", "") if 'prediction' in locals() else "")
+            
+            submitted = st.form_submit_button("Append to Excel")
+            if submitted:
+                row_data = {
+                    "Bill of Lading No.": bol_no,
+                    "Shipper": shipper,
+                    "Consignee": consignee,
+                    "Port of Loading": port_loading,
+                    "Port of Discharge": port_discharge
+                }
+                try:
+                    from excel_utils import append_row_to_excel
+                    append_row_to_excel(row_data)
+                    st.success("Row appended successfully to 'bol.xlsx'.")
+                except Exception as e:
+                    st.error(f"Failed to append row: {e}")
 
 if __name__ == "__main__":
     main()
