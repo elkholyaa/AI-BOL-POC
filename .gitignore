@@ -1,6 +1,34 @@
+# .gitignore
+# This file excludes local environment files, generated files, and ephemeral files 
+# from being tracked in the repository.
+
+# Virtual environment folder
 .venv/
+
+# PDF files
 *.pdf
+
+# Streamlit configuration and cache folder
 .streamlit/
+
+# Markdown files
 *.md
+
+# Devcontainer folder
 .devcontainer/
+
+# JSON files (e.g., configuration, secrets)
 *.json
+
+# Excel files (if generated, these are ignored)
+*.xlsx
+
+# --- Additional entries for Python development ---
+
+# Ignore Python cache directories
+__pycache__/
+
+# Ignore compiled Python files
+*.py[cod]
+client-demo/
+scrshots/
